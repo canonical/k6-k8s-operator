@@ -1,0 +1,72 @@
+# This file configures Charmcraft.
+# See https://juju.is/docs/sdk/charmcraft-config for guidance.
+
+name: k6-k8s
+type: charm
+assumes:
+  - k8s-api
+  - juju >= 3.6
+
+summary: A modern load testing tool, using Go and JavaScript.
+description: >
+  Grafana k6 is an open-source, developer-friendly, and extensible load testing tool.
+  k6 allows you to prevent performance issues and proactively improve reliability.
+
+links:
+  website: https://charmhub.io/k6-k8s
+  source: https://github.com/canonical/k6-k8s-operator
+  issues: https://github.com/canonical/k6-k8s-operator/issues
+  # documentation: https://discourse.charmhub.io/
+
+platforms:
+  ubuntu@24.04:amd64:
+  # ubuntu@24.04:arm64:
+
+parts:
+  charm:
+    charm-binary-python-packages: [cryptography, jsonschema, pydantic, pydantic-core, maturin]
+    build-packages: [git]
+    build-snaps: [astral-uv]
+    override-build: |
+      uv export --frozen --no-hashes --format=requirements-txt -o requirements.txt
+      # git describe --always > version
+      craftctl default
+    charm-requirements: [requirements.txt]
+
+containers:
+  k6:
+    resource: k6-image
+
+resources:
+  k6-image:
+    type: oci-image
+    description: OCI image for k6
+    upstream-source: ghcr.io/canonical/xk6:dev
+
+config:
+  options:
+    script:
+      type: string
+      required: false
+      description: >
+        A k6 script that can be executed via `k6 run`.
+
+actions:
+  run:
+    description: Run a load test script with the specified name.
+    properties:
+      app:
+        description: >
+          The app contributing the test.
+          Currently only accepts apps in the same model.
+          If not provided, the test in Juju config will be used.
+        type: string
+      script:
+        description: >
+          The k6 script to execute.
+          If not provided, the script in Juju config will be used.
+        type: string
+  status:
+    description: Check the `k6 status`.
+  stop:
+    description: Stop k6 is it's currently running.
