@@ -5,7 +5,7 @@ name: k6-k8s
 type: charm
 assumes:
   - k8s-api
-  - juju >= 3.6
+  - juju >= 3.6.2
 
 summary: A modern load testing tool, using Go and JavaScript.
 description: >
@@ -45,28 +45,22 @@ resources:
 
 config:
   options:
-    script:
+    load-test:
       type: string
       required: false
       description: >
-        A k6 script that can be executed via `k6 run`.
+        A standalone k6 script that can be executed via `k6 run`.
+        See examples in https://...
+        The value of this config option is used to by the `run` charm action.
 
 actions:
   run:
-    description: Run a load test script with the specified name.
-    properties:
-      app:
-        description: >
-          The app contributing the test.
-          Currently only accepts apps in the same model.
-          If not provided, the test in Juju config will be used.
-        type: string
-      script:
-        description: >
-          The k6 script to execute.
-          If not provided, the script in Juju config will be used.
-        type: string
+    description: >
+      Run a load test script. Currently, this only supports scripts
+      provided via `juju config`.
   status:
     description: Check the `k6 status`.
   stop:
-    description: Stop k6 is it's currently running.
+    description: Stop k6 if it's currently running.
+  list:
+    description: List currently available k6 scripts.

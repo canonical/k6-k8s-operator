@@ -3,26 +3,21 @@
 # See LICENSE file for licensing details.
 """A Juju charm for k6 on Kubernetes."""
 
-from enum import Enum
+from types import SimpleNamespace
 from typing import cast
 from pathlib import Path
 import logging
 import os
+import re
 
 from ops import CharmBase, main, ActionEvent
 from ops.model import ActiveStatus
 
 from ops.pebble import ExecError, Layer
-from collections import namedtuple
 
 logger = logging.getLogger(__name__)
-RulesMapping = namedtuple("RulesMapping", ["src", "dest"])
 
-
-class Ports(Enum):
-    """Ports used by the k6 charm."""
-
-    STATUS = 6565
+PORTS = SimpleNamespace(status=6565)
 
 
 class K6K8sCharm(CharmBase):
@@ -30,12 +25,12 @@ class K6K8sCharm(CharmBase):
 
     _scripts_folder = Path("/etc/k6/scripts")
     _default_script_path = "/etc/k6/scripts/juju-config-script.js"
-    _container_name = "k6"
-    _ports = [port.value for port in Ports]
+    _ports = list(PORTS.__dict__.values())
 
     def __init__(self, *args):
         super().__init__(*args)
-        if not self.unit.get_container(self._container_name).can_connect():
+        self.container = self.unit.get_container("k6")
+        if not self.container.can_connect():
             return
 
         self._reconcile()
@@ -45,7 +40,6 @@ class K6K8sCharm(CharmBase):
 
     def _reconcile(self):
         """Recreate the world state for the charm."""
-        container = self.unit.get_container(self._container_name)
         self.unit.set_ports(*self._ports)
 
         self.push_script_from_config()
@@ -61,55 +55,45 @@ class K6K8sCharm(CharmBase):
             event.fail("A load test is already running; please wait for it to finish.")
             return
 
-        container = self.unit.get_container(self._container_name)
         script_path = self._default_script_path
-        # Assemble the script path if provided via the action
-        if script := event.params.get("script"):
-            script_app = event.params.get("app")
-            script_path = f"{self._scripts_folder}/{script_app}/{script}"
-            if not script_path.endswith(".js") or not script_path.endswith(".ts"):
-                script_path = f"{script_path}.js"
         # Run the k6 script
-        layer = self._pebble_layer(script_path=script_path)
-        container.add_layer(self._container_name, layer, combine=True)
-        container.start("charmed-k6")  # TODO: extract this into service name
+        vus: int = self.get_vus(script_path=script_path) // self.app.planned_units()
+        layer = self._pebble_layer(script_path=script_path, vus=vus)
+        self.container.add_layer("k6", layer, combine=True)  # TODO: extract service name
+        self.container.start("k6")  # TODO: extract this into service name
+        event.log(f"Load test {script_path} started")
 
     def _on_stop_action(self, event: ActionEvent) -> None:
         if not self.unit.is_leader():
             event.fail("You can only run the action on the leader unit.")
             return
 
-        container = self.unit.get_container(self._container_name)
-        if not self.is_k6_running():
-            event.log("k6 is not running, no need to stop anything smh")
-        container.stop()
+        self.container.stop("k6")
 
     def _on_status_action(self, event: ActionEvent) -> None:
         if not self.unit.is_leader():
             event.fail("You can only run the action on the leader unit.")
             return
 
-        container = self.unit.get_container(self._container_name)
         try:
-            stdout, _ = container.pebble.exec(["k6", "status"]).wait()
+            stdout, _ = self.container.pebble.exec(["k6", "status"]).wait_output()
             event.log(stdout)
         except ExecError:
             event.log("k6 is currently not running.")
 
-    def _pebble_layer(self, script_path: str) -> Layer:
+    def _pebble_layer(self, script_path: str, vus: int) -> Layer:
         """Construct the Pebble layer informataion."""
         layer = Layer(
             {
                 "summary": "k6-k8s layer",
                 "description": "k6-k8s layer",
                 "services": {
-                    "charmed-k6": {
+                    "k6": {
                         "override": "replace",
                         "summary": "k6 service",
                         "command": f"/usr/bin/k6 run {script_path}",
                         "startup": "disabled",
                         "environment": {
-                            # TODO: put the hash of the script
                             "https_proxy": os.environ.get("JUJU_CHARM_HTTPS_PROXY", ""),
                             "http_proxy": os.environ.get("JUJU_CHARM_HTTP_PROXY", ""),
                             "no_proxy": os.environ.get("JUJU_CHARM_NO_PROXY", ""),
@@ -124,22 +108,31 @@ class K6K8sCharm(CharmBase):
     def push_script_from_config(self):
         """Push the k6 script in Juju config to the container."""
         script = cast(str, self.config.get("script", None))
-        container = self.unit.get_container(self._container_name)
         if script:
-            container.push(self._default_script_path, script, make_dirs=True)
+            self.container.push(self._default_script_path, script, make_dirs=True)
         else:
-            container.remove_path(self._default_script_path, recursive=True)
+            self.container.remove_path(self._default_script_path, recursive=True)
 
     def is_k6_running(self) -> bool:
         """Check whether a k6 script is already running."""
-        container = self.unit.get_container(self._container_name)
         try:
-            container.pebble.exec(["k6", "status"]).wait()
+            self.container.pebble.exec(["k6", "status"]).wait()
             logger.info("k6 is already running a test")
             return True
         except ExecError:
             logger.info("k6 isn't running")
             return False
+
+    def get_vus(self, script_path: str) -> int:
+        """Extract the VUs from a script."""
+        script = self.container.pull(self._default_script_path, encoding="utf-8").read()
+        match = re.search(r"vus:\s*(\d+)", script)
+        if not match:
+            raise Exception(f"Cannot parse vus from {script_path}")
+
+        vus = int(match.group(1))
+        logger.info(f"Script {script_path} declares {vus} vus")
+        return vus
 
 
 if __name__ == "__main__":
