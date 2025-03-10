@@ -56,6 +56,10 @@ class K6K8sCharm(CharmBase):
             return
 
         script_path = self._default_script_path
+        if not self.container.exists(script_path):
+            event.fail("No script found; set a script via `juju config load-test=@file.js`")
+            return
+
         # Run the k6 script
         vus: int = self.get_vus(script_path=script_path) // self.app.planned_units()
         layer = self._pebble_layer(script_path=script_path, vus=vus)
