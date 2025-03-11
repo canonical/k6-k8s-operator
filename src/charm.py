@@ -73,6 +73,7 @@ class K6K8sCharm(CharmBase):
             return
 
         self.container.stop("k6")
+        self.container.add_layer("k6", self._pebble_layer(script_path="", vus=0), combine=True)
 
     def _on_status_action(self, event: ActionEvent) -> None:
         if not self.unit.is_leader():
@@ -95,7 +96,7 @@ class K6K8sCharm(CharmBase):
                     "k6": {
                         "override": "replace",
                         "summary": "k6 service",
-                        "command": f"/usr/bin/k6 run {script_path}",
+                        "command": f"/usr/bin/k6 run {script_path} --vus {vus}",
                         "startup": "disabled",
                         "environment": {
                             "https_proxy": os.environ.get("JUJU_CHARM_HTTPS_PROXY", ""),
@@ -111,7 +112,7 @@ class K6K8sCharm(CharmBase):
 
     def push_script_from_config(self):
         """Push the k6 script in Juju config to the container."""
-        script = cast(str, self.config.get("script", None))
+        script = cast(str, self.config.get("load-test", None))
         if script:
             self.container.push(self._default_script_path, script, make_dirs=True)
         else:
