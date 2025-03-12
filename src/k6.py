@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import ops
 import re
@@ -110,10 +110,4 @@ class K6(ops.Object):
 
     def is_running(self) -> bool:
         """Check whether k6 is currently running."""
-        try:
-            self.container.pebble.exec(["k6", "status"]).wait()
-        except (ops.pebble.APIError, ops.pebble.ExecError):
-            logger.info("k6 is not running")
-            return False
-        logger.info("k6 is already running a load test")
-        return True
+        return self.container.get_service(self._service_name).is_running()
