@@ -16,7 +16,7 @@ $ juju deploy k6-k8s # --trust (use when Kubernetes has RBAC enabled)
 
 ## OCI Images
 
-This charm, by default, deploys `ubuntu/xk6:?`.
+This charm, by default, deploys `ubuntu/xk6:0-24.04`.
 
 ## Contributing
 

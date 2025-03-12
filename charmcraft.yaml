@@ -40,7 +40,13 @@ resources:
   k6-image:
     type: oci-image
     description: OCI image for k6
-    upstream-source: ghcr.io/canonical/xk6:dev
+    upstream-source: ubuntu/xk6:0-24.04
+
+peers:
+  k6:
+    interface: k6_peers
+    description: >
+      Peer relation used by the leader to control all k6 units.
 
 config:
   options:
@@ -49,7 +55,7 @@ config:
       required: false
       description: >
         A standalone k6 script that can be executed via `k6 run`.
-        See examples in https://...
+        See examples in https://grafana.com/docs/k6/latest/examples/
         The value of this config option is used to by the `run` charm action.
 
 actions:
@@ -57,6 +63,7 @@ actions:
     description: >
       Run a load test script. Currently, this only supports scripts
       provided via `juju config`.
+      This action must be run on the leader unit.
   status:
     description: Check the `k6 status`.
   stop:
