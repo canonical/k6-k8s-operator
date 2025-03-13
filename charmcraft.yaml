@@ -59,7 +59,7 @@ config:
         The value of this config option is used to by the `run` charm action.
 
 actions:
-  run:
+  start:
     description: >
       Run a load test script. Currently, this only supports scripts
       provided via `juju config`.
