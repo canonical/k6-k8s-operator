@@ -4,20 +4,29 @@ import json
 import os
 from typing import Dict, Optional
 
+from enum import Enum
 import ops
 import re
 from ops.pebble import Layer
 import logging
+from ops import Application, Unit
 
 logger = logging.getLogger(__name__)
+
+
+class K6Status(Enum):
+    """Helper class to represent the status of k6 units."""
+
+    idle = "idle"  # ready to accept a new test
+    active = "active"  # currently executing `k6 run`
 
 
 class K6(ops.Object):
     """Leader-controlled k6 workload manager for all the units."""
 
-    _relation_name = "k6"
     _container_name = "k6"
     _layer_name = "k6"
+    _relation_name = "k6"
     _service_name = "k6"
     _default_script_path = "/etc/k6/scripts/juju-config-script.js"
 
@@ -33,20 +42,32 @@ class K6(ops.Object):
             self._on_relation_changed,
         )
 
-    def _set_data(self, data: Dict) -> None:
+    def set_peer_data(self, databag: Unit | Application, data: Dict):
         """Store data in the peer relation."""
         if not self.peers:
             return
-        key = "k6"
-        self.peers.data[self._charm.app][key] = json.dumps(data)
+        for key, value in data.items():
+            self.peers.data[databag][key] = json.dumps(value)
 
-    def _get_data(self) -> Optional[Dict]:
+    def get_peer_data(self, databag: Unit | Application) -> Optional[Dict]:
         """Get data from the peer relation."""
         if not self.peers:
             return None
-        key = "k6"
-        data = self.peers.data[self._charm.app].get(key)
-        return json.loads(data) if data else None
+        data = {}
+        for key, value in self.peers.data[databag].items():
+            try:
+                data[key] = json.loads(value)
+            except json.JSONDecodeError:
+                data[key] = json.loads(str(value))
+        return data if data else None
+
+    def get_all_peer_data(self) -> Optional[Dict]:
+        if not self.peers:
+            return None
+        data = {}
+        for unit in self.peers.units:
+            data[unit.name] = self.get_peer_data(unit)
+        return data
 
     def _pebble_layer(self, script_path: str, vus: int) -> Layer:
         """Construct the Pebble layer information."""
@@ -58,7 +79,7 @@ class K6(ops.Object):
                     "k6": {
                         "override": "replace",
                         "summary": "k6 service",
-                        "command": f"/usr/bin/k6 run {script_path} --vus {vus}",
+                        "command": f"/usr/bin/k6 run {script_path} --vus {vus} --paused",
                         "startup": "disabled",
                         "environment": {
                             "https_proxy": os.environ.get("JUJU_CHARM_HTTPS_PROXY", ""),
@@ -73,7 +94,7 @@ class K6(ops.Object):
 
     def _on_relation_changed(self, _: ops.RelationChangedEvent) -> None:
         """Set the Pebble layer from peer data."""
-        data = self._get_data()
+        data = self.get_peer_data(self._charm.app)
         layer_dict = data.get("layer") if data else None
         # If there is no layer in peer data, stop whatever is running
         if not layer_dict:
@@ -98,15 +119,36 @@ class K6(ops.Object):
         logger.info(f"Script {script_path} declares {vus} vus")
         return vus
 
+    def initialize(self):
+        """Set 'idle' status in each unit if they have no other status."""
+        data = self.get_peer_data(self._charm.unit)
+        if not data or "status" not in data:
+            # TODO: add unit fqdn to peer data for /start call
+            self.set_peer_data(self._charm.unit, {"status": K6Status.idle})
+
+    def _start(self):
+        """Aaa."""
+        if not self._charm.unit.is_leader():
+            return
+        data = {}
+        for unit in self.peers.units:
+            pass  # TODO: below
+        # Get all the peer unit databags
+        # checks for paused in all of them
+        # tenacity-retry this method if they are not all "paused" (active)
+        # if yes, get their IPs and /start the tests on each one
+
     def run(self, *, script_path: str):
         """Set a command in the Pebble layer for all units."""
         vus: int = self._get_vus_from_script(script_path=script_path)
         layer = self._pebble_layer(script_path=script_path, vus=vus)
-        self._set_data(data={"layer": layer.to_dict()})
+        self.set_peer_data(
+            self._charm.app, data={"layer": layer.to_dict(), "status": K6Status.active}
+        )
 
     def stop(self):
         """Stop `k6` in all the units."""
-        self._set_data(data={})
+        self.set_peer_data(self._charm.app, data={})
 
     def is_running(self) -> bool:
         """Check whether k6 is currently running."""
