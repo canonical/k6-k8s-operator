@@ -47,6 +47,7 @@ class K6K8sCharm(CharmBase):
 
     def _on_start_action(self, event: ActionEvent) -> None:
         """Run a load test script with `k6 run`."""
+        self.k6.initialize()
         if not self.unit.is_leader():
             event.fail("You can only run the action on the leader unit.")
             return
