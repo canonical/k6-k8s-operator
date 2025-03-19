@@ -33,6 +33,7 @@ class K6K8sCharm(CharmBase):
             return
 
         self.k6 = K6(charm=self)
+        self.k6.initialize()
         self._reconcile()
         # Juju actions
         self.framework.observe(self.on.start_action, self._on_start_action)
@@ -47,7 +48,6 @@ class K6K8sCharm(CharmBase):
 
     def _on_start_action(self, event: ActionEvent) -> None:
         """Run a load test script with `k6 run`."""
-        self.k6.initialize()
         if not self.unit.is_leader():
             event.fail("You can only run the action on the leader unit.")
             return

@@ -30,7 +30,7 @@ class K6Api:
     def resume(endpoint: str) -> None:
         """Resume a paused load test."""
         k6_resume_payload = {"data": {"attributes": {"paused": True}}}
-        response = requests.patch(endpoint, json=k6_resume_payload)
+        response = requests.patch(f"{endpoint}/status", json=k6_resume_payload)
         if response.status_code != 200:
             raise Exception(f"Cannot start test on {endpoint}: received {response.status_code}")
 
@@ -42,6 +42,7 @@ class K6(ops.Object):
     _layer_name = "k6"
     _relation_name = "k6"
     _service_name = "k6"
+    _pebble_notice_done = "k6.com/done"
     _default_script_path = "/etc/k6/scripts/juju-config-script.js"
 
     def __init__(self, *, charm: ops.CharmBase):
@@ -55,6 +56,13 @@ class K6(ops.Object):
             self._charm.on[self._relation_name].relation_changed,
             self._on_relation_changed,
         )
+        # Pebble notices only wake up the unit emitting them
+        self.framework.observe(
+            self._charm.on[self._service_name].pebble_custom_notice,
+            self._on_pebble_custom_notice,
+        )
+        self.framework.observe(self._charm.on.collect_unit_status, self._collect_unit_status)
+        self.framework.observe(self._charm.on.collect_app_status, self._collect_app_status)
 
     def set_peer_data(self, databag: Unit | Application, data: Dict):
         """Store data in the peer relation."""
@@ -72,7 +80,7 @@ class K6(ops.Object):
             try:
                 data[key] = json.loads(value)
             except json.JSONDecodeError:
-                data[key] = json.loads(str(value))
+                data[key] = json.loads(f'"{str(value)}"')
         return data if data else None
 
     def get_all_peer_unit_data(self) -> Optional[Dict]:
@@ -86,6 +94,10 @@ class K6(ops.Object):
 
     def _pebble_layer(self, script_path: str, vus: int) -> Layer:
         """Construct the Pebble layer information."""
+        command = f"""#!/usr/bin/env bash
+/usr/bin/k6 run {script_path} --vus {vus} --paused; pebble notify {self._pebble_notice_done}
+        """
+        self.container.push("/etc/k6/start.sh", command, make_dirs=True, permissions=0o755)
         layer = Layer(
             {
                 "summary": "k6-k8s layer",
@@ -94,18 +106,40 @@ class K6(ops.Object):
                     "k6": {
                         "override": "replace",
                         "summary": "k6 service",
-                        "command": f"/usr/bin/k6 run {script_path} --vus {vus} --paused",
-                        "startup": "enabled",
+                        "command": "/etc/k6/start.sh",
+                        "startup": "disabled",
                         "environment": {
+                            "_command": command,
                             "https_proxy": os.environ.get("JUJU_CHARM_HTTPS_PROXY", ""),
                             "http_proxy": os.environ.get("JUJU_CHARM_HTTP_PROXY", ""),
                             "no_proxy": os.environ.get("JUJU_CHARM_NO_PROXY", ""),
                         },
-                    }
+                    },
                 },
             }
         )
         return layer
+
+    def _collect_unit_status(self, event: ops.CollectStatusEvent) -> None:
+        """Set the status for each unit based on the peer relation databag."""
+        data = self.get_peer_data(self._charm.unit)
+        if not data or "status" not in data or data["status"] == K6Status.idle.value:
+            event.add_status(ops.ActiveStatus())
+            return
+        event.add_status(ops.ActiveStatus(f"k6 status: {data.get('status')}"))
+
+    def _collect_app_status(self, event: ops.CollectStatusEvent) -> None:
+        """Set the status for the application based on peer data."""
+        peer_data = self.get_all_peer_unit_data()
+        if not peer_data:
+            event.add_status(ops.ActiveStatus("k6 status: idle"))
+            return
+        units = self._charm.app.planned_units()
+        busy_units = len([d for d in peer_data.values() if d.get("status") == K6Status.busy.value])
+        if busy_units == 0:
+            event.add_status(ops.ActiveStatus("k6 status: idle"))
+            return
+        event.add_status(ops.ActiveStatus(f"k6 status: busy ({busy_units}/{units} units)"))
 
     def _on_relation_changed(self, _: ops.RelationChangedEvent) -> None:
         """Set the Pebble layer from peer data."""
@@ -115,13 +149,26 @@ class K6(ops.Object):
         if not layer_dict:
             try:
                 self.container.stop(self._service_name)
+                self.set_peer_data(self._charm.unit, {"status": K6Status.idle.value})
             except ops.pebble.APIError:
                 logger.info("k6 is not running")
             return
-        # Else, set it, replan and start the load tests from the leader
+        # Prepare the start.sh script
+        command = layer_dict["services"][self._service_name]["environment"]["_command"]
+        self.container.push("/etc/k6/start.sh", command, make_dirs=True, permissions=0o755)
+        # Set the layer, replan and start the load tests from the leader
         self.container.add_layer(self._layer_name, Layer(layer_dict), combine=True)
         self.container.replan()
-        self._start_if_ready()
+        self.container.start(self._service_name)
+        self.set_peer_data(self._charm.unit, {"status": K6Status.busy.value})
+        self._start_test_if_ready()
+
+    def _on_pebble_custom_notice(self, event: ops.PebbleCustomNoticeEvent) -> None:
+        """React to a Pebble notice."""
+        # When the k6 command finished running
+        if event.notice.key == self._pebble_notice_done:
+            # Set the unit back to 'idle'
+            self.set_peer_data(self._charm.unit, data={"layer": {}, "status": K6Status.idle.value})
 
     def _get_vus_from_script(self, script_path: str) -> int:
         """Extract the VUs from a script."""
@@ -139,11 +186,12 @@ class K6(ops.Object):
         data = self.get_peer_data(self._charm.unit)
         if not data or "status" not in data:
             self.set_peer_data(
-                self._charm.unit, {"status": K6Status.idle, "endpoint": socket.getfqdn()}
+                self._charm.unit,
+                {"status": K6Status.idle.value, "endpoint": f"http://{socket.getfqdn()}:6565"},
             )
 
-    def _start_if_ready(self):
-        """Start a k6 load test in all units."""
+    def _start_test_if_ready(self):
+        """Have the leader start a k6 load test in all units."""
         if (
             not self._charm.unit.is_leader()
             or not self.peers
@@ -159,13 +207,11 @@ class K6(ops.Object):
         """Set a command in the Pebble layer for all units."""
         vus: int = self._get_vus_from_script(script_path=script_path)
         layer = self._pebble_layer(script_path=script_path, vus=vus)
-        self.set_peer_data(
-            self._charm.app, data={"layer": layer.to_dict(), "status": K6Status.busy}
-        )
+        self.set_peer_data(self._charm.app, data={"layer": layer.to_dict()})
 
     def stop(self):
         """Stop `k6` in all the units."""
-        self.set_peer_data(self._charm.app, data={"layer": {}, "status": K6Status.idle})
+        self.set_peer_data(self._charm.app, data={"layer": {}})
 
     def are_all_units_ready(self) -> bool:
         """Check whether all k6 units are ready for tests to be started.
@@ -174,16 +220,18 @@ class K6(ops.Object):
         and that all the units set their status as "busy" in peer data.
         """
         peer_data = self.get_all_peer_unit_data()
+        busy = K6Status.busy.value
         if not peer_data:
             return False
-        return all(unit_data.get("status") == K6Status.busy for unit_data in peer_data)
+        return all(unit_data.get("status") == busy for unit_data in peer_data.values())
 
     def is_running(self) -> bool:
         """Check whether k6 is currently running in any unit."""
         peer_data = self.get_all_peer_unit_data()
+        busy = K6Status.busy.value
         if not peer_data:
             return False
-        return any(unit_data.get("status") == K6Status.busy for unit_data in peer_data)
+        return any(unit_data.get("status") == busy for unit_data in peer_data.values())
 
     def is_running_on_unit(self) -> bool:
         """Check whether k6 is currently running in the current unit."""
