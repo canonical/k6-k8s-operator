@@ -3,7 +3,6 @@
 # See LICENSE file for licensing details.
 """A Juju charm for k6 on Kubernetes."""
 
-from types import SimpleNamespace
 from typing import cast
 from pathlib import Path
 import logging
@@ -13,10 +12,9 @@ from ops import CharmBase, main, ActionEvent
 from ops.model import ActiveStatus
 
 from ops.pebble import ExecError
+from k6 import PORTS
 
 logger = logging.getLogger(__name__)
-
-PORTS = SimpleNamespace(status=6565)
 
 
 class K6K8sCharm(CharmBase):
