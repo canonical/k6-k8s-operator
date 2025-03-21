@@ -3,7 +3,6 @@
 # See LICENSE file for licensing details.
 """A Juju charm for k6 on Kubernetes."""
 
-from types import SimpleNamespace
 from typing import cast
 from pathlib import Path
 import logging
@@ -13,10 +12,9 @@ from ops import CharmBase, main, ActionEvent
 from ops.model import ActiveStatus
 
 from ops.pebble import ExecError
+from k6 import PORTS
 
 logger = logging.getLogger(__name__)
-
-PORTS = SimpleNamespace(status=6565)
 
 
 class K6K8sCharm(CharmBase):
@@ -33,6 +31,7 @@ class K6K8sCharm(CharmBase):
             return
 
         self.k6 = K6(charm=self)
+        self.k6.initialize()
         self._reconcile()
         # Juju actions
         self.framework.observe(self.on.start_action, self._on_start_action)
@@ -71,7 +70,7 @@ class K6K8sCharm(CharmBase):
 
     def _on_status_action(self, event: ActionEvent) -> None:
         try:
-            stdout, _ = self.container.pebble.exec(["k6", "status"]).wait_output()
+            self.k6.is_running_on_unit()
             event.log(f"k6 status for {self.unit.name} is:\n{stdout}")
         except ExecError:
             event.log("k6 is not running")
