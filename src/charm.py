@@ -5,7 +5,8 @@
 
 import logging
 from pathlib import Path
-from typing import cast
+import re
+from typing import Optional, cast
 
 from charms.loki_k8s.v1.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v1.prometheus_remote_write import PrometheusRemoteWriteConsumer
@@ -47,6 +48,7 @@ class K6K8sCharm(CharmBase):
     def _reconcile(self):
         """Recreate the world state for the charm."""
         self.unit.set_ports(*self._ports)
+        self.unit.set_workload_version(self._k6_version or "")
         self.push_script_from_config()
         self.unit.status = ActiveStatus()
 
@@ -81,6 +83,14 @@ class K6K8sCharm(CharmBase):
             self.container.push(self._default_script_path, script, make_dirs=True)
         else:
             self.container.remove_path(self._default_script_path, recursive=True)
+
+    @property
+    def _k6_version(self) -> Optional[str]:
+        """Returns the version of k6."""
+        version_output, _ = self.container.exec(["k6", "--version"]).wait_output()
+        # k6 v0.57.0 (go1.22.12, linux/amd64) ...
+        result = re.search(r"k6 v(\d+\.\d+\.\d+)", version_output)
+        return result.group(1) if result else None
 
 
 if __name__ == "__main__":

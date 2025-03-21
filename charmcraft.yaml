@@ -57,6 +57,14 @@ config:
         A standalone k6 script that can be executed via `k6 run`.
         See examples in https://grafana.com/docs/k6/latest/examples/
         The value of this config option is used to by the `run` charm action.
+    environment:
+      type: string
+      required: false
+      description: >
+        A comma-separated list of environment variables to be used by k6 scripts.
+        These will override any variables passed over relation data.
+        Example:
+          `juju config k6 environment "ENDPOINT='http://...',FOO=bar,BAZ=42"`
 
 actions:
   start:
