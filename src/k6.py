@@ -87,7 +87,7 @@ class K6(ops.Object):
         if not self.peers:
             return None
         data = {}
-        for unit in self.peers.units:
+        for unit in [*self.peers.units, self._charm.unit]:
             data[unit.name] = self.get_peer_data(unit)
         return data
 
@@ -130,6 +130,7 @@ class K6(ops.Object):
             return
         units = self._charm.app.planned_units()
         busy_units = len([d for d in peer_data.values() if d.get("status") == K6Status.busy.value])
+        logger.info(f"DEBUG: peer_data.values(): {peer_data.values()}")  # TODO: remove this
         if busy_units == 0:
             event.add_status(ops.ActiveStatus("k6 status: idle"))
             return

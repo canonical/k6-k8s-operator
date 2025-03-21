@@ -70,7 +70,7 @@ class K6K8sCharm(CharmBase):
 
     def _on_status_action(self, event: ActionEvent) -> None:
         try:
-            stdout, _ = self.container.pebble.exec(["k6", "status"]).wait_output()
+            self.k6.is_running_on_unit()
             event.log(f"k6 status for {self.unit.name} is:\n{stdout}")
         except ExecError:
             event.log("k6 is not running")
