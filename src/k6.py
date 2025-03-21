@@ -4,6 +4,7 @@ import json
 import os
 from typing import Dict, List, Optional
 import uuid
+from datetime import datetime
 from cosl import JujuTopology
 
 from enum import Enum
@@ -121,14 +122,23 @@ class K6(ops.Object):
             data[unit.name] = self.get_peer_data(unit)
         return data
 
-    def _pebble_layer(self, script_path: str, vus: int, labels: Dict[str, str]) -> Layer:
+    def _pebble_layer(self) -> Layer:
         """Construct the Pebble layer information."""
+        data = self.get_peer_data(self._charm.app)
+        if not data:
+            return Layer()
+
+        labels = self.labels or {}
+        # Build labels for Prometheus
         labels_args: List[str] = [f"--tag {key}={value}" for key, value in labels.items()]
         # Build Loki argument
         loki_arg: str = ""
         if self.loki_endpoint:
             loki_labels = ",".join([f"label.{key}={value}" for key, value in labels.items()])
             loki_arg = f"--log-output=loki={self.loki_endpoint},{loki_labels}"
+        # Get information from peer data
+        script_path = data["script_path"]
+        vus = data["vus"]
 
         # Build the Pebble layer
         layer = Layer(
@@ -200,11 +210,7 @@ class K6(ops.Object):
         app_status = app_data.get("status")
         # If app and unit 'status' are 'idle', build the layer and start the tests (from the leader)
         if app_status == K6Status.idle.value:
-            layer = self._pebble_layer(
-                script_path=app_data["script_path"],
-                vus=app_data["vus"],
-                labels=self.labels or {},
-            )
+            layer = self._pebble_layer()
             self.container.add_layer(self._layer_name, layer, combine=True)
             self.container.replan()
             self.container.start(self._service_name)
@@ -253,18 +259,19 @@ class K6(ops.Object):
         """The labels to attach to a k6 load test."""
         # Get the test_uuid from peer relation data
         data = self.get_peer_data(self._charm.app)
-        if not data or "test_uuid" not in data:
+        if not data or "labels" not in data:
             return None
         # Generate the other labels from Juju topology
         topology: JujuTopology = JujuTopology.from_charm(self._charm)
         labels = {
-            "test_uuid": data["test_uuid"],
+            "test_uuid": data.get("test_uuid") or "",
+            "date": data.get("date") or "",
+            "script": data.get("script_path") or "",
             "juju_charm": topology.charm_name,
             "juju_model": topology.model,
             "juju_model_uuid": topology.model_uuid,
             "juju_application": topology.application,
             "juju_unit": topology.unit,
-            "script": data.get("script_path") or "",
         }
         return labels
 
@@ -300,12 +307,16 @@ class K6(ops.Object):
         # TODO: also split 'iterations' if present in the script
         # because it's the total shared across all VUs
         test_uuid: str = str(uuid.uuid4())
+        start_time: str = datetime.now().isoformat()
         self.set_peer_data(
             self._charm.app,
             data={
                 "script_path": script_path,
                 "vus": vus,
-                "test_uuid": test_uuid,
+                "labels": {
+                    "test_uuid": test_uuid,
+                    "date": start_time,
+                },
                 "status": K6Status.idle.value,
             },
         )
