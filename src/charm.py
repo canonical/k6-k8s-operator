@@ -6,13 +6,14 @@
 from typing import cast
 from pathlib import Path
 import logging
-from k6 import K6
+from k6 import K6, PORTS
+
+from charms.loki_k8s.v1.loki_push_api import LokiPushApiConsumer
+from charms.prometheus_k8s.v1.prometheus_remote_write import PrometheusRemoteWriteConsumer
 
 from ops import CharmBase, main, ActionEvent
 from ops.model import ActiveStatus
 
-from ops.pebble import ExecError
-from k6 import PORTS
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +31,18 @@ class K6K8sCharm(CharmBase):
         if not self.container.can_connect():
             return
 
-        self.k6 = K6(charm=self)
-        self.k6.initialize()
+        self.prometheus = PrometheusRemoteWriteConsumer(self)
+        self.loki = LokiPushApiConsumer(self)
+        prometheus_endpoints = self.prometheus.endpoints
+        loki_endpoints = self.loki.loki_endpoints
+        self.k6 = K6(
+            charm=self,
+            prometheus_endpoint=prometheus_endpoints[0]["url"] if prometheus_endpoints else None,
+            loki_endpoint=loki_endpoints[0]["url"] if loki_endpoints else None,
+        )
         self._reconcile()
         # Juju actions
         self.framework.observe(self.on.start_action, self._on_start_action)
-        self.framework.observe(self.on.status_action, self._on_status_action)
         self.framework.observe(self.on.stop_action, self._on_stop_action)
 
     def _reconcile(self):
@@ -67,13 +74,6 @@ class K6K8sCharm(CharmBase):
             event.fail("You can only run this action on the leader unit.")
             return
         self.k6.stop()
-
-    def _on_status_action(self, event: ActionEvent) -> None:
-        try:
-            self.k6.is_running_on_unit()
-            event.log(f"k6 status for {self.unit.name} is:\n{stdout}")
-        except ExecError:
-            event.log("k6 is not running")
 
     def push_script_from_config(self):
         """Push the k6 script in Juju config to the container."""
