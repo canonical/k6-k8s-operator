@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import socket
+import typing
 import urllib.request
 import uuid
 from datetime import datetime
@@ -138,6 +139,10 @@ class K6(ops.Object):
         # Get information from peer data
         script_path = data["script_path"]
         vus = data["vus"]
+        # Build the environment args
+        environment_args: List[str] = [
+            f"-e {key}={value}" for key, value in self.environment.items()
+        ]
 
         # Build the Pebble layer
         layer = Layer(
@@ -153,6 +158,7 @@ class K6(ops.Object):
                             f"--vus {vus} "
                             f"--address {self.endpoint} "
                             f"{' '.join(labels_args)} "
+                            f"{' '.join(environment_args)} "
                             "-o experimental-prometheus-rw "
                             f"{loki_arg} "
                             f"; pebble notify k6.com/done'"
@@ -263,8 +269,8 @@ class K6(ops.Object):
         # Generate the other labels from Juju topology
         topology: JujuTopology = JujuTopology.from_charm(self._charm)
         labels = {
-            "test_uuid": data.get("test_uuid") or "",
-            "date": data.get("date") or "",
+            "test_uuid": data["labels"].get("test_uuid") or "",
+            "date": data["labels"].get("date") or "",
             "script": data.get("script_path") or "",
             "juju_charm": topology.charm_name,
             "juju_model": topology.model,
@@ -273,6 +279,18 @@ class K6(ops.Object):
             "juju_unit": topology.unit,
         }
         return labels
+
+    @property
+    def environment(self) -> Dict[str, str]:
+        """Get the environment variables for the current k6 script."""
+        data = self.get_peer_data(self._charm.app)
+        if not data:
+            return {}
+        environment_raw: str = typing.cast(str, self._charm.config.get("environment", ""))
+        if not environment_raw:
+            return {}
+        environment = dict(item.split("=") for item in environment_raw.split(","))
+        return environment
 
     def _initialize(self):
         """Set 'idle' status in each unit if they have no other status."""
