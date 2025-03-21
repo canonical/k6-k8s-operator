@@ -3,17 +3,16 @@
 # See LICENSE file for licensing details.
 """A Juju charm for k6 on Kubernetes."""
 
-from typing import cast
-from pathlib import Path
 import logging
-from k6 import K6, PORTS
+from pathlib import Path
+from typing import cast
 
 from charms.loki_k8s.v1.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v1.prometheus_remote_write import PrometheusRemoteWriteConsumer
-
-from ops import CharmBase, main, ActionEvent
+from ops import ActionEvent, CharmBase, main
 from ops.model import ActiveStatus
 
+from k6 import K6, PORTS
 
 logger = logging.getLogger(__name__)
 

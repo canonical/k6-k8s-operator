@@ -1,22 +1,21 @@
 """Helper module to handle the communication between the leader units."""
 
 import json
-import os
-from typing import Dict, List, Optional
-import uuid
-from datetime import datetime
-from cosl import JujuTopology
-
-from enum import Enum
-import ops
-import re
-from ops.pebble import Layer
 import logging
-from ops import Application, Unit
+import os
+import re
 import socket
 import urllib.request
-
+import uuid
+from datetime import datetime
+from enum import Enum
 from types import SimpleNamespace
+from typing import Dict, List, Optional
+
+import ops
+from cosl import JujuTopology
+from ops import Application, Unit
+from ops.pebble import Layer
 
 logger = logging.getLogger(__name__)
 
