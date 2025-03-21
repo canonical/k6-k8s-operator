@@ -64,9 +64,22 @@ actions:
       Run a load test script. Currently, this only supports scripts
       provided via `juju config`.
       This action must be run on the leader unit.
-  status:
-    description: Check the `k6 status`.
   stop:
     description: Stop k6 if it's currently running.
   list:
     description: List currently available k6 scripts.
+
+requires:
+  send-remote-write:
+    interface: prometheus_remote_write
+    limit: 1
+    description: >
+      Send the results from `k6` load tests to a Prometheus-remote-write-compatible
+      endpoint. `k6` can only send results to one endpoint, hence the limit: 1. 
+  logging:
+    interface: loki_push_api
+    limit: 1
+    description: >
+      Send the logs from 'k6' load tests to a Loki-compatible endpoint.
+      `k6` can only send results to one endpoint, hence the limit: 1.
+

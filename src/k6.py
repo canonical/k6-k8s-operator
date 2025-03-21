@@ -2,7 +2,9 @@
 
 import json
 import os
-from typing import Dict, Optional
+from typing import Dict, List, Optional
+import uuid
+from cosl import JujuTopology
 
 from enum import Enum
 import ops
@@ -11,7 +13,7 @@ from ops.pebble import Layer
 import logging
 from ops import Application, Unit
 import socket
-import requests
+import urllib.request
 
 from types import SimpleNamespace
 
@@ -32,12 +34,24 @@ class K6Api:
     """Helper class to interact with the k6 HTTP API."""
 
     @staticmethod
+    def _request(url: str, method: str, payload: Dict) -> str:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            method=method,
+        )
+        request.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(request) as response:
+            if retcode := response.getcode() != 200:
+                raise Exception(f"Cannot start test on {url}: received {retcode}")
+            response_data = response.read()
+            return response_data.decode("utf-8")
+
+    @staticmethod
     def resume(endpoint: str) -> None:
         """Resume a paused load test."""
         k6_resume_payload = {"data": {"attributes": {"paused": True}}}
-        response = requests.patch(f"http://{endpoint}/status", json=k6_resume_payload)
-        if response.status_code != 200:
-            raise Exception(f"Cannot start test on {endpoint}: received {response.status_code}")
+        K6Api._request(url=f"http://{endpoint}/status", method="PATCH", payload=k6_resume_payload)
 
 
 class K6(ops.Object):
@@ -50,12 +64,22 @@ class K6(ops.Object):
     _pebble_notice_done = "k6.com/done"
     _default_script_path = "/etc/k6/scripts/juju-config-script.js"
 
-    def __init__(self, *, charm: ops.CharmBase):
+    def __init__(
+        self,
+        *,
+        charm: ops.CharmBase,
+        prometheus_endpoint: Optional[str] = None,
+        loki_endpoint: Optional[str] = None,
+    ):
         """Construct the workload manager."""
         super().__init__(charm, self._relation_name)
         self._charm = charm
         self.peers: Optional[ops.Relation] = self._charm.model.get_relation(self._relation_name)
         self.container: ops.Container = self._charm.unit.get_container(self._container_name)
+        self.prometheus_endpoint: Optional[str] = prometheus_endpoint
+        self.loki_endpoint: Optional[str] = loki_endpoint
+
+        self._initialize()
 
         self.framework.observe(
             self._charm.on[self._relation_name].relation_changed,
@@ -75,6 +99,12 @@ class K6(ops.Object):
             return
         self.peers.data[databag]["k6"] = json.dumps(data)
 
+    def clear_peer_data(self, databag: Unit | Application) -> None:
+        """Clear the data stored in peer relation under the 'k6' key."""
+        if not self.peers:
+            return
+        self.peers.data[databag]["k6"] = ""
+
     def get_peer_data(self, databag: Unit | Application) -> Optional[Dict]:
         """Get data from the peer relation under the 'k6' key."""
         if not self.peers:
@@ -91,8 +121,16 @@ class K6(ops.Object):
             data[unit.name] = self.get_peer_data(unit)
         return data
 
-    def _pebble_layer(self, script_path: str, vus: int) -> Layer:
+    def _pebble_layer(self, script_path: str, vus: int, labels: Dict[str, str]) -> Layer:
         """Construct the Pebble layer information."""
+        labels_args: List[str] = [f"--tag {key}={value}" for key, value in labels.items()]
+        # Build Loki argument
+        loki_arg: str = ""
+        if self.loki_endpoint:
+            loki_labels = ",".join([f"label.{key}={value}" for key, value in labels.items()])
+            loki_arg = f"--log-output=loki={self.loki_endpoint},{loki_labels}"
+
+        # Build the Pebble layer
         layer = Layer(
             {
                 "summary": "k6-k8s layer",
@@ -101,12 +139,21 @@ class K6(ops.Object):
                     "k6": {
                         "override": "replace",
                         "summary": "k6 service",
-                        "command": f"/bin/bash -c 'k6 run {script_path} --vus {vus} --address {self.endpoint} && pebble notify k6.com/done'",
+                        "command": (
+                            f"/bin/bash -c 'k6 run {script_path} "
+                            f"--vus {vus} "
+                            f"--address {self.endpoint} "
+                            f"{' '.join(labels_args)} "
+                            "-o experimental-prometheus-rw "
+                            f"{loki_arg} "
+                            f"; pebble notify k6.com/done'"
+                        ),
                         "startup": "disabled",
                         "environment": {
                             "https_proxy": os.environ.get("JUJU_CHARM_HTTPS_PROXY", ""),
                             "http_proxy": os.environ.get("JUJU_CHARM_HTTP_PROXY", ""),
                             "no_proxy": os.environ.get("JUJU_CHARM_NO_PROXY", ""),
+                            "K6_PROMETHEUS_RW_SERVER_URL": self.prometheus_endpoint or "",
                         },
                     },
                 },
@@ -130,7 +177,6 @@ class K6(ops.Object):
             return
         units = self._charm.app.planned_units()
         busy_units = len([d for d in peer_data.values() if d.get("status") == K6Status.busy.value])
-        logger.info(f"DEBUG: peer_data.values(): {peer_data.values()}")  # TODO: remove this
         if busy_units == 0:
             event.add_status(ops.ActiveStatus("k6 status: idle"))
             return
@@ -154,7 +200,11 @@ class K6(ops.Object):
         app_status = app_data.get("status")
         # If app and unit 'status' are 'idle', build the layer and start the tests (from the leader)
         if app_status == K6Status.idle.value:
-            layer = self._pebble_layer(script_path=app_data["script_path"], vus=app_data["vus"])
+            layer = self._pebble_layer(
+                script_path=app_data["script_path"],
+                vus=app_data["vus"],
+                labels=self.labels or {},
+            )
             self.container.add_layer(self._layer_name, layer, combine=True)
             self.container.replan()
             self.container.start(self._service_name)
@@ -170,10 +220,7 @@ class K6(ops.Object):
         # the peer app databag.
         if self._charm.unit.is_leader() and app_status == K6Status.busy.value:
             if self.are_all_units_in_status(K6Status.idle):
-                self.set_peer_data(
-                    self._charm.app,
-                    {"status": K6Status.idle.value},
-                )
+                self.clear_peer_data(self._charm.app)
 
     def _on_pebble_custom_notice(self, event: ops.PebbleCustomNoticeEvent) -> None:
         """React to a Pebble notice."""
@@ -201,7 +248,27 @@ class K6(ops.Object):
         """The endpoint of the k6 HTTP API."""
         return f"{socket.getfqdn()}:{PORTS.status}"
 
-    def initialize(self):
+    @property
+    def labels(self) -> Optional[Dict[str, str]]:
+        """The labels to attach to a k6 load test."""
+        # Get the test_uuid from peer relation data
+        data = self.get_peer_data(self._charm.app)
+        if not data or "test_uuid" not in data:
+            return None
+        # Generate the other labels from Juju topology
+        topology: JujuTopology = JujuTopology.from_charm(self._charm)
+        labels = {
+            "test_uuid": data["test_uuid"],
+            "juju_charm": topology.charm_name,
+            "juju_model": topology.model,
+            "juju_model_uuid": topology.model_uuid,
+            "juju_application": topology.application,
+            "juju_unit": topology.unit,
+            "script": data.get("script_path") or "",
+        }
+        return labels
+
+    def _initialize(self):
         """Set 'idle' status in each unit if they have no other status."""
         data = self.get_peer_data(self._charm.unit)
         if not data or "status" not in data:
@@ -230,14 +297,22 @@ class K6(ops.Object):
     def run(self, *, script_path: str):
         """Set the Pebble layer building blocks in peer data for all units."""
         vus: int = self._get_vus_from_script(script_path=script_path)
+        # TODO: also split 'iterations' if present in the script
+        # because it's the total shared across all VUs
+        test_uuid: str = str(uuid.uuid4())
         self.set_peer_data(
             self._charm.app,
-            data={"script_path": script_path, "vus": vus, "status": K6Status.idle.value},
+            data={
+                "script_path": script_path,
+                "vus": vus,
+                "test_uuid": test_uuid,
+                "status": K6Status.idle.value,
+            },
         )
 
     def stop(self):
         """Stop `k6` in all the units."""
-        self.set_peer_data(self._charm.app, data={"script_path": "", "vus": ""})
+        self.clear_peer_data(self._charm.app)
 
     def are_all_units_in_status(self, status: K6Status) -> bool:
         """Check whether all k6 have the provided status."""
