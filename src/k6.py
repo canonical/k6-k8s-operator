@@ -245,7 +245,7 @@ class K6(ops.Object):
 
     def _get_vus_from_script(self, script_path: str) -> int:
         """Extract the VUs from a script."""
-        script = self.container.pull(self._default_script_path, encoding="utf-8").read()
+        script = self.container.pull(script_path, encoding="utf-8").read()
         match = re.search(r"vus:\s*(\d+)", script)
         if not match:
             raise ValueError(f"Cannot parse vus from {script_path}")
@@ -320,7 +320,9 @@ class K6(ops.Object):
 
     def run(self, *, script_path: str):
         """Set the Pebble layer building blocks in peer data for all units."""
-        vus: int = self._get_vus_from_script(script_path=script_path)
+        vus: int = (
+            self._get_vus_from_script(script_path=script_path) // self._charm.app.planned_units()
+        )
         # TODO: also split 'iterations' if present in the script
         # because it's the total shared across all VUs
         test_uuid: str = str(uuid.uuid4())
