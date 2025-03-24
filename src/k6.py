@@ -320,7 +320,9 @@ class K6(ops.Object):
 
     def run(self, *, script_path: str):
         """Set the Pebble layer building blocks in peer data for all units."""
-        vus: int = self._get_vus_from_script(script_path=script_path)
+        vus: int = (
+            self._get_vus_from_script(script_path=script_path) // self._charm.app.planned_units()
+        )
         # TODO: also split 'iterations' if present in the script
         # because it's the total shared across all VUs
         test_uuid: str = str(uuid.uuid4())

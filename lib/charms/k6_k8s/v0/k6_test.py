@@ -118,7 +118,7 @@ class K6TestProvider(Object):
         charm: CharmBase,
         *,
         relation_name: str = DEFAULT_PROVIDER_NAME,
-        tests_path: str | Path = "tests/load",
+        tests_path: str = "tests/load",
         environment: Optional[Dict[str, str]] = None,
     ):
         super().__init__(charm, relation_name)
