@@ -245,7 +245,7 @@ class K6(ops.Object):
 
     def _get_vus_from_script(self, script_path: str) -> int:
         """Extract the VUs from a script."""
-        script = self.container.pull(self._default_script_path, encoding="utf-8").read()
+        script = self.container.pull(script_path, encoding="utf-8").read()
         match = re.search(r"vus:\s*(\d+)", script)
         if not match:
             raise ValueError(f"Cannot parse vus from {script_path}")

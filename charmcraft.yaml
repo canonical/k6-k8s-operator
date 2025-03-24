@@ -72,6 +72,16 @@ actions:
       Run a load test script. Currently, this only supports scripts
       provided via `juju config`.
       This action must be run on the leader unit.
+    properties:
+      app:
+        description: >
+          Name of the app providing the tests.
+          Currently, only in-model relations are supported.
+        type: string
+      test:
+        description: >
+          Name of the test to run (its filename).
+        type: string
   stop:
     description: Stop k6 if it's currently running.
   list:
@@ -90,4 +100,7 @@ requires:
     description: >
       Send the logs from 'k6' load tests to a Loki-compatible endpoint.
       `k6` can only send results to one endpoint, hence the limit: 1.
-
+  receive-k6-tests:
+    interface: k6_tests
+    description: >
+      Receive load tests from other charms.
