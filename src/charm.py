@@ -9,6 +9,7 @@ import re
 from typing import Dict, List, Optional, cast
 
 from charms.k6_k8s.v0.k6_test import K6TestRequirer
+from charms.istio_beacon_k8s.v0.service_mesh import ServiceMeshConsumer, UnitPolicy
 from charms.loki_k8s.v1.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v1.prometheus_remote_write import PrometheusRemoteWriteConsumer
 from ops import ActionEvent, CharmBase, main
@@ -41,6 +42,15 @@ class K6K8sCharm(CharmBase):
             charm=self,
             prometheus_endpoint=prometheus_endpoints[0]["url"] if prometheus_endpoints else None,
             loki_endpoint=loki_endpoints[0]["url"] if loki_endpoints else None,
+        )
+        self._mesh = ServiceMeshConsumer(
+            self,
+            policies=[
+                UnitPolicy(
+                    relation="k6",  # when related over k6 (peers) relation
+                    ports=[PORTS.status],  # allow the source (other peer workloads) to acces the status port of the target workload
+                ),
+            ]
         )
         self._reconcile()
         # Juju actions
