@@ -1,6 +1,6 @@
 # Terraform module for k6-k8s
 
-This is a Terraform module facilitating the deployment of grafana-k8s charm, using the [Terraform juju provider](https://github.com/juju/terraform-provider-juju/). For more information, refer to the provider [documentation](https://registry.terraform.io/providers/juju/juju/latest/docs). 
+This is a Terraform module facilitating the deployment of k6-k8s charm, using the [Terraform juju provider](https://github.com/juju/terraform-provider-juju/). For more information, refer to the provider [documentation](https://registry.terraform.io/providers/juju/juju/latest/docs). 
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
