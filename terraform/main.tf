@@ -1,12 +1,14 @@
 resource "juju_application" "k6" {
-  name  = var.app_name
-  model = var.model_name
-  trust = true
+  name               = var.app_name
+  config             = var.config
+  constraints        = var.constraints
+  model_uuid         = var.model_uuid
+  storage_directives = var.storage_directives
+  trust              = true
+  units              = var.units
   charm {
     name     = "k6-k8s"
     channel  = var.channel
     revision = var.revision
   }
-  units  = var.units
-  config = var.config
 }
