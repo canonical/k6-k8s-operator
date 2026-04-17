@@ -19,6 +19,7 @@ def k6_instance():
     mock_charm = MagicMock()
     mock_charm.model.get_relation.return_value = None
     mock_charm.unit.get_container.return_value = MagicMock()
+    mock_charm.unit.name = "k6/0"
     mock_charm.app.planned_units.return_value = 1
 
     k6 = K6.__new__(K6)
@@ -30,98 +31,81 @@ def k6_instance():
     return k6
 
 
-def _mock_pull(content: str):
-    """Return a mock pebble pull object that returns the given content."""
-    mock_fileobj = MagicMock()
-    mock_fileobj.read.return_value = content
-    return mock_fileobj
+def _make_mock_unit(name: str) -> MagicMock:
+    """Create a mock Juju unit with the given name."""
+    unit = MagicMock()
+    unit.name = name
+    return unit
 
 
-class TestGetVusFromScript:
-    def test_constant_vus_executor(self, k6_instance):
-        """VUs are parsed from 'vus:' when no constant-arrival-rate executor is used."""
-        script = """
-        import http from 'k6/http';
-        export const options = {
-          vus: 10,
-          duration: '30s',
-        };
-        """
-        k6_instance.container.pull.return_value = _mock_pull(script)
-        assert k6_instance._get_vus_from_script("/path/to/script.js") == 10
+class TestExecutionSegmentArgs:
+    def test_single_unit_no_peers(self, k6_instance):
+        """A single unit (no peers) returns empty string — no segmentation."""
+        assert k6_instance._execution_segment_args() == ""
 
-    def test_constant_arrival_rate_executor(self, k6_instance):
-        """MaxVUs is parsed when constant-arrival-rate executor is used."""
-        script = """
-        import http from 'k6/http';
-        export const options = {
-          scenarios: {
-            constant_rate_test: {
-              executor: 'constant-arrival-rate',
-              rate: 2000,
-              timeUnit: '1m',
-              duration: '20m',
-              preAllocatedVUs: 10,
-              maxVUs: 30,
-            },
-          },
-        };
-        """
-        k6_instance.container.pull.return_value = _mock_pull(script)
-        assert k6_instance._get_vus_from_script("/path/to/script.js") == 30
+    def test_single_unit_with_peer_relation(self, k6_instance):
+        """A single unit with an empty peer relation returns empty string."""
+        k6_instance.peers = MagicMock()
+        k6_instance.peers.units = set()
+        assert k6_instance._execution_segment_args() == ""
 
-    def test_constant_arrival_rate_without_max_vus_raises(self, k6_instance):
-        """ValueError is raised when constant-arrival-rate executor has no maxVUs."""
-        script = """
-        import http from 'k6/http';
-        export const options = {
-          scenarios: {
-            constant_rate_test: {
-              executor: 'constant-arrival-rate',
-              rate: 2000,
-              timeUnit: '1m',
-              duration: '20m',
-              preAllocatedVUs: 10,
-            },
-          },
-        };
-        """
-        k6_instance.container.pull.return_value = _mock_pull(script)
-        with pytest.raises(ValueError, match="Cannot parse maxVUs from"):
-            k6_instance._get_vus_from_script("/path/to/script.js")
+    def test_three_units_index_0(self, k6_instance):
+        """First unit of 3 gets the first segment."""
+        k6_instance._charm.unit = _make_mock_unit("k6/0")
+        peer1 = _make_mock_unit("k6/1")
+        peer2 = _make_mock_unit("k6/2")
+        k6_instance.peers = MagicMock()
+        k6_instance.peers.units = {peer1, peer2}
 
-    def test_no_vus_raises(self, k6_instance):
-        """ValueError is raised when no vus can be found in the script."""
-        script = """
-        import http from 'k6/http';
-        export const options = {
-          duration: '30s',
-        };
-        """
-        k6_instance.container.pull.return_value = _mock_pull(script)
-        with pytest.raises(ValueError, match="Cannot parse vus from"):
-            k6_instance._get_vus_from_script("/path/to/script.js")
+        result = k6_instance._execution_segment_args()
+        assert "--execution-segment '0/3:1/3'" in result
+        assert "--execution-segment-sequence '0,1/3,2/3,1'" in result
 
-    def test_constant_vus_with_whitespace(self, k6_instance):
-        """VUs are parsed correctly when there is whitespace around the colon."""
-        script = "export const options = { vus:   42, duration: '10s' };"
-        k6_instance.container.pull.return_value = _mock_pull(script)
-        assert k6_instance._get_vus_from_script("/path/to/script.js") == 42
+    def test_three_units_index_1(self, k6_instance):
+        """Middle unit of 3 gets the second segment."""
+        k6_instance._charm.unit = _make_mock_unit("k6/1")
+        peer0 = _make_mock_unit("k6/0")
+        peer2 = _make_mock_unit("k6/2")
+        k6_instance.peers = MagicMock()
+        k6_instance.peers.units = {peer0, peer2}
 
-    def test_constant_arrival_rate_max_vus_with_whitespace(self, k6_instance):
-        """MaxVUs is parsed correctly when there is whitespace around the colon."""
-        script = (
-            "export const options = { scenarios: { t: { executor: 'constant-arrival-rate',"
-            " maxVUs:   50, preAllocatedVUs: 5 } } };"
-        )
-        k6_instance.container.pull.return_value = _mock_pull(script)
-        assert k6_instance._get_vus_from_script("/path/to/script.js") == 50
+        result = k6_instance._execution_segment_args()
+        assert "--execution-segment '1/3:2/3'" in result
+        assert "--execution-segment-sequence '0,1/3,2/3,1'" in result
 
-    def test_partial_executor_name_does_not_trigger_arrival_rate_branch(self, k6_instance):
-        """Scripts with 'constant-arrival-rate' as substring but not the executor do not trigger maxVUs parsing."""
-        script = (
-            "// This test uses a custom-constant-arrival-rate-style executor\n"
-            "export const options = { vus: 5, duration: '10s' };"
-        )
-        k6_instance.container.pull.return_value = _mock_pull(script)
-        assert k6_instance._get_vus_from_script("/path/to/script.js") == 5
+    def test_three_units_index_2(self, k6_instance):
+        """Last unit of 3 gets the third segment."""
+        k6_instance._charm.unit = _make_mock_unit("k6/2")
+        peer0 = _make_mock_unit("k6/0")
+        peer1 = _make_mock_unit("k6/1")
+        k6_instance.peers = MagicMock()
+        k6_instance.peers.units = {peer0, peer1}
+
+        result = k6_instance._execution_segment_args()
+        assert "--execution-segment '2/3:3/3'" in result
+        assert "--execution-segment-sequence '0,1/3,2/3,1'" in result
+
+    def test_non_contiguous_unit_numbers(self, k6_instance):
+        """Non-contiguous unit numbers (e.g. after scale-down) are mapped to contiguous indices."""
+        # k6/0, k6/1, k6/3 — k6/2 was removed
+        k6_instance._charm.unit = _make_mock_unit("k6/3")
+        peer0 = _make_mock_unit("k6/0")
+        peer1 = _make_mock_unit("k6/1")
+        k6_instance.peers = MagicMock()
+        k6_instance.peers.units = {peer0, peer1}
+
+        # k6/3 sorts last → index 2 out of 3
+        result = k6_instance._execution_segment_args()
+        assert "--execution-segment '2/3:3/3'" in result
+        assert "--execution-segment-sequence '0,1/3,2/3,1'" in result
+
+    def test_two_units(self, k6_instance):
+        """Two units split the test in half."""
+        k6_instance._charm.unit = _make_mock_unit("k6/0")
+        peer1 = _make_mock_unit("k6/1")
+        k6_instance.peers = MagicMock()
+        k6_instance.peers.units = {peer1}
+
+        result = k6_instance._execution_segment_args()
+        assert "--execution-segment '0/2:1/2'" in result
+        assert "--execution-segment-sequence '0,1/2,1'" in result

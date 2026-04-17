@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import re
 import socket
 import typing
 import urllib.request
@@ -138,13 +137,13 @@ class K6(ops.Object):
             loki_arg = f"--log-output=loki={self.loki_endpoint},{loki_labels}"
         # Get information from peer data
         script_path = data["script_path"]
-        vus = data["vus"]
         # Build the environment args
         environment_args: List[str] = [
             f"-e {key}={value}" for key, value in self.environment.items()
         ]
 
         # Build the Pebble layer
+        execution_segment = self._execution_segment_args()
         layer = Layer(
             {
                 "summary": "k6-k8s layer",
@@ -155,7 +154,7 @@ class K6(ops.Object):
                         "summary": "k6 service",
                         "command": (
                             f"/bin/sh -c 'k6 run {script_path} "
-                            f"--vus {vus} "
+                            f"{execution_segment} "
                             f"--address {self.endpoint} "
                             f"{' '.join(labels_args)} "
                             f"{' '.join(environment_args)} "
@@ -201,7 +200,7 @@ class K6(ops.Object):
         """Set the Pebble layer from peer data."""
         app_data = self.get_peer_data(self._charm.app)
         # If the necessary information is not in peer data, stop whatever is running
-        if not app_data or not app_data.get("script_path") or not app_data.get("vus"):
+        if not app_data or not app_data.get("script_path"):
             try:
                 self.container.stop(self._service_name)
                 self.set_peer_data(
@@ -243,25 +242,25 @@ class K6(ops.Object):
                 data={"endpoint": self.endpoint, "status": K6Status.idle.value},
             )
 
-    def _get_vus_from_script(self, script_path: str) -> int:
-        """Extract the VUs from a script."""
-        script = self.container.pull(script_path, encoding="utf-8").read()
+    def _execution_segment_args(self) -> str:
+        """Compute the --execution-segment flags for this unit.
 
-        if re.search(r"""["']constant-arrival-rate["']""", script):
-            match = re.search(r"maxVUs:\s*(\d+)", script)
-            if not match:
-                raise ValueError(f"Cannot parse maxVUs from {script_path}")
-            vus = int(match.group(1))
-            logger.info(f"Script {script_path} declares {vus} maxVUs")
-            return vus
-
-        match = re.search(r"vus:\s*(\d+)", script)
-        if not match:
-            raise ValueError(f"Cannot parse vus from {script_path}")
-
-        vus = int(match.group(1))
-        logger.info(f"Script {script_path} declares {vus} vus")
-        return vus
+        Each unit gets a proportional slice of the test. The unit's index is
+        derived from lexicographically sorted peer unit names, making the
+        mapping deterministic and robust to non-contiguous unit numbers.
+        """
+        all_units = sorted(
+            [*self.peers.units, self._charm.unit] if self.peers else [self._charm.unit],
+            key=lambda u: u.name,
+        )
+        n = len(all_units)
+        if n == 1:
+            return ""
+        index = next(i for i, u in enumerate(all_units) if u == self._charm.unit)
+        segment = f"--execution-segment '{index}/{n}:{(index + 1)}/{n}'"
+        sequence_parts = ["0"] + [f"{i}/{n}" for i in range(1, n)] + ["1"]
+        sequence = f"--execution-segment-sequence '{','.join(sequence_parts)}'"
+        return f"{segment} {sequence}"
 
     @property
     def endpoint(self) -> str:
@@ -329,18 +328,12 @@ class K6(ops.Object):
 
     def run(self, *, script_path: str):
         """Set the Pebble layer building blocks in peer data for all units."""
-        vus: int = (
-            self._get_vus_from_script(script_path=script_path) // self._charm.app.planned_units()
-        )
-        # TODO: also split 'iterations' if present in the script
-        # because it's the total shared across all VUs
         test_uuid: str = str(uuid.uuid4())
         start_time: str = datetime.now().isoformat()
         self.set_peer_data(
             self._charm.app,
             data={
                 "script_path": script_path,
-                "vus": vus,
                 "labels": {
                     "test_uuid": test_uuid,
                     "date": start_time,
