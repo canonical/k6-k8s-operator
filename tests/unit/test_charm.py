@@ -4,6 +4,7 @@
 
 import json
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 # The service-mesh charm library imports modules not available in the unit-test
@@ -20,16 +21,15 @@ from ops import testing  # noqa: E402
 
 from charm import K6K8sCharm  # noqa: E402
 
-CHARM_ROOT = "/home/aegis/Repositories/Canonical/k6-k8s-operator"
+CHARM_ROOT = Path(__file__).parent.parent.parent
 
 # charmcraft.yaml uses 'properties' for action parameters (JSON Schema style),
 # but Scenario's consistency checker expects the Juju 'params' key.  When we
 # pass ``actions`` to Context it ignores the charm_root metadata, so we also
 # need to provide ``meta`` and ``config`` explicitly.
 import yaml as _yaml  # noqa: E402
-from pathlib import Path as _Path  # noqa: E402
 
-_CHARMCRAFT = _yaml.safe_load((_Path(CHARM_ROOT) / "charmcraft.yaml").read_text())
+_CHARMCRAFT = _yaml.safe_load((CHARM_ROOT / "charmcraft.yaml").read_text())
 
 _META = {
     "name": _CHARMCRAFT["name"],

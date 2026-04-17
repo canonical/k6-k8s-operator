@@ -19,9 +19,11 @@ sys.modules.setdefault("charms.istio_beacon_k8s", MagicMock())
 sys.modules.setdefault("charms.istio_beacon_k8s.v0", MagicMock())
 sys.modules.setdefault("charms.istio_beacon_k8s.v0.service_mesh", _svc_mesh)
 
+from pathlib import Path  # noqa: E402
+
 from charm import K6K8sCharm  # noqa: E402
 
-CHARM_ROOT = "/home/aegis/Repositories/Canonical/k6-k8s-operator"
+CHARM_ROOT = Path(__file__).parent.parent.parent
 K6_VERSION_EXEC = testing.Exec(
     command_prefix=["k6", "--version"],
     stdout="k6 v0.57.0 (go1.22.12, linux/amd64)",
