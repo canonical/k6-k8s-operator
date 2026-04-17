@@ -9,9 +9,10 @@ import time
 import jubilant
 import pytest
 
-from .conftest import APP_NAME, K6_IMAGE, LIGHTWEIGHT_K6_SCRIPT
+from .conftest import APP_NAME, K6_IMAGE, RESOURCES_DIR
 
 LOKI_APP = "loki-k8s"
+LOAD_TEST_SCRIPT = (RESOURCES_DIR / "load_test_loki.js").read_text()
 
 
 def _wait_for_idle(juju: jubilant.Juju, timeout=300, poll_interval=10):
@@ -65,7 +66,7 @@ def _assert_loki_has_k6_logs(juju: jubilant.Juju, retries=30, delay=10):
 def test_deploy_loki(juju: jubilant.Juju, charm_path):
     """Deploy k6 and loki, integrate them."""
     juju.deploy(charm_path, APP_NAME, resources={"k6-image": K6_IMAGE})
-    juju.deploy(LOKI_APP, channel="latest/stable", trust=True)
+    juju.deploy(LOKI_APP, channel="dev/edge", trust=True)
     juju.wait(
         lambda s: jubilant.all_active(s, APP_NAME, LOKI_APP),
         timeout=600,
@@ -75,8 +76,8 @@ def test_deploy_loki(juju: jubilant.Juju, charm_path):
 
 
 def test_run_single_unit(juju: jubilant.Juju):
-    """Configure and run a lightweight test, then verify Loki has k6 logs."""
-    juju.config(APP_NAME, values={"load-test": LIGHTWEIGHT_K6_SCRIPT})
+    """Configure and run a lightweight load test, then verify Loki has k6 logs."""
+    juju.config(APP_NAME, values={"load-test": LOAD_TEST_SCRIPT})
     juju.wait(lambda s: jubilant.all_active(s), timeout=120)
 
     task = juju.run(unit=f"{APP_NAME}/leader", action="start")
@@ -92,7 +93,7 @@ def test_run_single_unit(juju: jubilant.Juju):
 
 
 def test_scale_up_and_run_multi_unit(juju: jubilant.Juju):
-    """Scale k6 to 3 units, run test, verify Loki logs."""
+    """Scale k6 to 3 units, run load test, verify Loki logs."""
     juju.cli("scale-application", APP_NAME, "3")
     juju.wait(lambda s: jubilant.all_active(s, APP_NAME), timeout=600)
 

@@ -13,21 +13,7 @@ logger = logging.getLogger(__name__)
 METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 APP_NAME = str(METADATA["name"])
 K6_IMAGE = str(METADATA["resources"]["k6-image"]["upstream-source"])
-
-# Lightweight k6 script that generates minimal load.
-# Uses a simple sleep-based approach so it works without any target HTTP server.
-LIGHTWEIGHT_K6_SCRIPT = """\
-import { sleep } from 'k6';
-
-export const options = {
-    vus: 1,
-    duration: '10s',
-};
-
-export default function () {
-    sleep(1);
-}
-"""
+RESOURCES_DIR = Path(__file__).parent.parent / "resources"
 
 
 def pytest_addoption(parser):

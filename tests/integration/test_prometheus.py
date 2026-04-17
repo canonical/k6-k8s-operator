@@ -9,9 +9,10 @@ import time
 import jubilant
 import pytest
 
-from .conftest import APP_NAME, K6_IMAGE, LIGHTWEIGHT_K6_SCRIPT
+from .conftest import APP_NAME, K6_IMAGE, RESOURCES_DIR
 
 PROMETHEUS_APP = "prometheus-k8s"
+LOAD_TEST_SCRIPT = (RESOURCES_DIR / "load_test_prometheus.js").read_text()
 
 
 def _wait_for_idle(juju: jubilant.Juju, timeout=300, poll_interval=10):
@@ -56,7 +57,7 @@ def _assert_prometheus_has_k6_metrics(juju: jubilant.Juju, retries=30, delay=10)
 def test_deploy_prometheus(juju: jubilant.Juju, charm_path):
     """Deploy k6 and prometheus, integrate them."""
     juju.deploy(charm_path, APP_NAME, resources={"k6-image": K6_IMAGE})
-    juju.deploy(PROMETHEUS_APP, channel="latest/stable", trust=True)
+    juju.deploy(PROMETHEUS_APP, channel="dev/edge", trust=True)
     juju.wait(
         lambda s: jubilant.all_active(s, APP_NAME, PROMETHEUS_APP),
         timeout=600,
@@ -66,8 +67,8 @@ def test_deploy_prometheus(juju: jubilant.Juju, charm_path):
 
 
 def test_run_single_unit(juju: jubilant.Juju):
-    """Configure and run a lightweight test, then verify Prometheus has k6 metrics."""
-    juju.config(APP_NAME, values={"load-test": LIGHTWEIGHT_K6_SCRIPT})
+    """Configure and run a lightweight load test, then verify Prometheus has k6 metrics."""
+    juju.config(APP_NAME, values={"load-test": LOAD_TEST_SCRIPT})
     juju.wait(lambda s: jubilant.all_active(s), timeout=120)
 
     task = juju.run(unit=f"{APP_NAME}/leader", action="start")
@@ -83,7 +84,7 @@ def test_run_single_unit(juju: jubilant.Juju):
 
 
 def test_scale_up_and_run_multi_unit(juju: jubilant.Juju):
-    """Scale k6 to 3 units, run test, verify Prometheus metrics."""
+    """Scale k6 to 3 units, run load test, verify Prometheus metrics."""
     juju.cli("scale-application", APP_NAME, "3")
     juju.wait(lambda s: jubilant.all_active(s, APP_NAME), timeout=600)
 
