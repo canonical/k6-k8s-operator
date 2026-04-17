@@ -58,6 +58,9 @@ pythonPlatform = "All"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 addopts = "--tb=native --verbose --capture=no --log-cli-level=INFO"
+markers = [
+    "abort_on_fail: abort the test session on first failure",
+]
 
 [tool.codespell]
 skip = ".git,.tox,build,venv*"

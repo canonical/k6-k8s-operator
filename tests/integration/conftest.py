@@ -2,9 +2,9 @@
 # See LICENSE file for licensing details.
 
 import logging
+import os
 from pathlib import Path
 
-import jubilant
 import pytest
 import yaml
 
@@ -32,30 +32,17 @@ export default function () {
 
 def pytest_addoption(parser):
     parser.addoption("--charm_path", action="store", help="Path to the built charm file")
-    parser.addoption("--model", action="store", default=None, help="Juju model to use")
+    # Alias for --no-juju-teardown; the shared observability CI passes --keep-models in debug mode.
     parser.addoption("--keep-models", action="store_true", default=False)
 
 
-@pytest.fixture(scope="module")
-def juju(request):
-    model = request.config.getoption("--model")
-    if model:
-        juju = jubilant.Juju(model=model, wait_timeout=10 * 60)
-        yield juju
-        if request.session.testsfailed:
-            print(juju.debug_log(limit=1000), end="")
-        return
-
-    keep = bool(request.config.getoption("--keep-models"))
-    with jubilant.temp_model(keep=keep) as juju:
-        juju.wait_timeout = 10 * 60
-        yield juju
-        if request.session.testsfailed:
-            print(juju.debug_log(limit=1000), end="")
+def pytest_configure(config):
+    if config.getoption("--keep-models", default=False):
+        config.option.no_juju_teardown = True
 
 
 @pytest.fixture(scope="session")
 def charm_path(request):
-    path = request.config.getoption("--charm_path")
-    assert path, "Please provide --charm_path"
+    path = request.config.getoption("--charm_path") or os.environ.get("CHARM_PATH")
+    assert path, "Please provide --charm_path or set CHARM_PATH env var"
     return Path(path).resolve()
