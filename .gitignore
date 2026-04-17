@@ -12,3 +12,8 @@ sqlite-static
 # Charm-specific
 requirements*.txt
 version
+
+# Scenario test runtime artifacts
+metadata.yaml
+config.yaml
+actions.yaml
