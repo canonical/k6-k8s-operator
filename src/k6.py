@@ -154,7 +154,7 @@ class K6(ops.Object):
                         "override": "replace",
                         "summary": "k6 service",
                         "command": (
-                            f"/bin/bash -c 'k6 run {script_path} "
+                            f"/bin/sh -c 'k6 run {script_path} "
                             f"--vus {vus} "
                             f"--address {self.endpoint} "
                             f"{' '.join(labels_args)} "
