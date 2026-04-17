@@ -131,9 +131,9 @@ class TestRelationChanged:
         # Verify the pebble layer was added with the k6 run command
         container = out.get_container("k6")
         assert "k6" in container.layers
-        svc = container.layers["k6"].to_dict()["services"]["k6"]
-        assert "k6 run /etc/k6/scripts/test.js" in svc["command"]
-        assert "pebble notify k6.com/done" in svc["command"]
+        svc = container.layers["k6"].services["k6"]
+        assert "k6 run /etc/k6/scripts/test.js" in svc.command
+        assert "pebble notify k6.com/done" in svc.command
 
     def test_no_app_data_stops_service_and_sets_idle(self):
         """When app data is empty, the unit is set back to idle."""
@@ -200,7 +200,7 @@ class TestPebbleLayer:
         with patch("k6.K6Api.resume"):
             out = ctx.run(ctx.on.relation_changed(peer, remote_unit=1), state)
         container = out.get_container("k6")
-        cmd = container.layers["k6"].to_dict()["services"]["k6"]["command"]
+        cmd = container.layers["k6"].services["k6"].command
         assert "k6 run /etc/k6/scripts/custom.js" in cmd
 
     def test_layer_contains_prometheus_rw_flag(self):
@@ -219,7 +219,7 @@ class TestPebbleLayer:
         with patch("k6.K6Api.resume"):
             out = ctx.run(ctx.on.relation_changed(peer, remote_unit=1), state)
         container = out.get_container("k6")
-        cmd = container.layers["k6"].to_dict()["services"]["k6"]["command"]
+        cmd = container.layers["k6"].services["k6"].command
         assert "-o experimental-prometheus-rw" in cmd
 
     def test_layer_includes_tag_labels(self):
@@ -240,7 +240,7 @@ class TestPebbleLayer:
         with patch("k6.K6Api.resume"):
             out = ctx.run(ctx.on.relation_changed(peer, remote_unit=1), state)
         container = out.get_container("k6")
-        cmd = container.layers["k6"].to_dict()["services"]["k6"]["command"]
+        cmd = container.layers["k6"].services["k6"].command
         assert "--tag test_uuid=uuid-1" in cmd
         assert "--tag date=2025-06-01" in cmd
 
@@ -261,7 +261,7 @@ class TestPebbleLayer:
         with patch("k6.K6Api.resume"):
             out = ctx.run(ctx.on.relation_changed(peer, remote_unit=1), state)
         container = out.get_container("k6")
-        cmd = container.layers["k6"].to_dict()["services"]["k6"]["command"]
+        cmd = container.layers["k6"].services["k6"].command
         assert "-e BASE_URL=http://example.com" in cmd
         assert "-e TIMEOUT=30" in cmd
 

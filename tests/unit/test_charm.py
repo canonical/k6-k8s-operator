@@ -67,7 +67,14 @@ def _base_container(*, execs=None):
     return testing.Container("k6", can_connect=True, execs=exec_set)
 
 
-def _base_state(*, config=None, leader=True, peer=None, relations=None, container=None):
+def _base_state(
+    *,
+    config: dict[str, str | int | float | bool] | None = None,
+    leader=True,
+    peer=None,
+    relations=None,
+    container=None,
+):
     """Build a minimal viable State for the charm."""
     if config is None:
         config = {"load-test": "// default script"}
