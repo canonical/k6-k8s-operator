@@ -247,7 +247,7 @@ class K6(ops.Object):
         """Extract the VUs from a script."""
         script = self.container.pull(script_path, encoding="utf-8").read()
 
-        if re.search(r"constant-arrival-rate", script):
+        if re.search(r"""["']constant-arrival-rate["']""", script):
             match = re.search(r"maxVUs:\s*(\d+)", script)
             if not match:
                 raise ValueError(f"Cannot parse maxVUs from {script_path}")

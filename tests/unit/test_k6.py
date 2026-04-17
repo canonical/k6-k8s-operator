@@ -116,3 +116,12 @@ class TestGetVusFromScript:
         )
         k6_instance.container.pull.return_value = _mock_pull(script)
         assert k6_instance._get_vus_from_script("/path/to/script.js") == 50
+
+    def test_partial_executor_name_does_not_trigger_arrival_rate_branch(self, k6_instance):
+        """Scripts with 'constant-arrival-rate' as substring but not the executor do not trigger maxVUs parsing."""
+        script = (
+            "// This test uses a custom-constant-arrival-rate-style executor\n"
+            "export const options = { vus: 5, duration: '10s' };"
+        )
+        k6_instance.container.pull.return_value = _mock_pull(script)
+        assert k6_instance._get_vus_from_script("/path/to/script.js") == 5
