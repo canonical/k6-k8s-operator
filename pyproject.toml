@@ -21,6 +21,10 @@ dev = [
   # Unit
   "pytest",
   "coverage[toml]",
+  "ops-scenario",
+  # Integration
+  "jubilant",
+  "pytest-jubilant",
 ]
 
 # Testing tools configuration
