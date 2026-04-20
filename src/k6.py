@@ -11,6 +11,7 @@ from datetime import datetime
 from enum import Enum
 from types import SimpleNamespace
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 import ops
 from cosl import JujuTopology
@@ -130,17 +131,26 @@ class K6(ops.Object):
         labels = self.labels or {}
         # Build labels for Prometheus
         labels_args: List[str] = [f"--tag {key}={value}" for key, value in labels.items()]
-        # Build Loki argument
-        loki_arg: str = ""
-        if self.loki_endpoint:
-            loki_labels = ",".join([f"label.{key}={value}" for key, value in labels.items()])
-            loki_arg = f"--log-output=loki={self.loki_endpoint},{loki_labels}"
         # Get information from peer data
         script_path = data["script_path"]
         # Build the environment args
         environment_args: List[str] = [
             f"-e {key}={value}" for key, value in self.environment.items()
         ]
+
+        # Build the pebble service environment
+        service_env: Dict[str, str] = {
+            "https_proxy": os.environ.get("JUJU_CHARM_HTTPS_PROXY", ""),
+            "http_proxy": os.environ.get("JUJU_CHARM_HTTP_PROXY", ""),
+            "no_proxy": os.environ.get("JUJU_CHARM_NO_PROXY", ""),
+            "K6_PROMETHEUS_RW_SERVER_URL": self.prometheus_endpoint or "",
+        }
+        # Pass the Loki endpoint as LOKI_URL for xk6-loki scripts
+        if self.loki_endpoint:
+            parsed = urlparse(self.loki_endpoint)
+            service_env["LOKI_URL"] = f"{parsed.scheme}://{parsed.netloc}"
+        # User-defined environment variables override relation-derived values
+        service_env.update(self.environment)
 
         # Build the Pebble layer
         execution_segment = self._execution_segment_args()
@@ -159,16 +169,10 @@ class K6(ops.Object):
                             f"{' '.join(labels_args)} "
                             f"{' '.join(environment_args)} "
                             "-o experimental-prometheus-rw "
-                            f"{loki_arg} "
                             f"; pebble notify k6.com/done'"
                         ),
                         "startup": "disabled",
-                        "environment": {
-                            "https_proxy": os.environ.get("JUJU_CHARM_HTTPS_PROXY", ""),
-                            "http_proxy": os.environ.get("JUJU_CHARM_HTTP_PROXY", ""),
-                            "no_proxy": os.environ.get("JUJU_CHARM_NO_PROXY", ""),
-                            "K6_PROMETHEUS_RW_SERVER_URL": self.prometheus_endpoint or "",
-                        },
+                        "environment": service_env,
                     },
                 },
             }
