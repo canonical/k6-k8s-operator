@@ -21,9 +21,8 @@ LOAD_TEST_SCRIPT = (RESOURCES_DIR / "load_test.js").read_text()
 
 # Kubernetes in-cluster DNS for headless services created by Juju
 LOKI_URL = f"http://{LOKI_APP}-0.{LOKI_APP}-endpoints:3100"
-PROMETHEUS_RW_URL = (
-    f"http://{PROMETHEUS_APP}-0.{PROMETHEUS_APP}-endpoints:9090/api/v1/write"
-)
+PROMETHEUS_URL = f"http://{PROMETHEUS_APP}-0.{PROMETHEUS_APP}-endpoints:9090"
+PROMETHEUS_RW_URL = f"{PROMETHEUS_URL}/api/v1/write"
 
 
 def _wait_for_idle(juju: jubilant.Juju, timeout=300, poll_interval=10):
@@ -112,7 +111,11 @@ def test_deploy(juju: jubilant.Juju, charm_path):
 def test_run_single_unit(juju: jubilant.Juju):
     """Configure endpoints via environment config, run load test, verify observability."""
     # Exercise the charm's environment config to template the endpoints
-    env_config = f"LOKI_URL={LOKI_URL},K6_PROMETHEUS_RW_SERVER_URL={PROMETHEUS_RW_URL}"
+    env_config = (
+        f"LOKI_URL={LOKI_URL}"
+        f",K6_PROMETHEUS_RW_SERVER_URL={PROMETHEUS_RW_URL}"
+        f",TARGET_URL={PROMETHEUS_URL}"
+    )
     juju.config(APP_NAME, values={"load-test": LOAD_TEST_SCRIPT, "environment": env_config})
     juju.wait(lambda s: jubilant.all_active(s), timeout=120)
 

@@ -131,6 +131,11 @@ class K6(ops.Object):
         labels = self.labels or {}
         # Build labels for Prometheus
         labels_args: List[str] = [f"--tag {key}={value}" for key, value in labels.items()]
+        # Build --log-output=loki argument (see k6 docs "Log output > Loki")
+        loki_arg: str = ""
+        if self.loki_endpoint:
+            loki_labels = ",".join(f"label.{k}={v}" for k, v in labels.items())
+            loki_arg = f"--log-output=loki={self.loki_endpoint},{loki_labels}"
         # Get information from peer data
         script_path = data["script_path"]
         # Build the environment args
@@ -145,7 +150,7 @@ class K6(ops.Object):
             "no_proxy": os.environ.get("JUJU_CHARM_NO_PROXY", ""),
             "K6_PROMETHEUS_RW_SERVER_URL": self.prometheus_endpoint or "",
         }
-        # Pass the Loki endpoint as LOKI_URL for xk6-loki scripts
+        # Expose the Loki base URL for xk6-loki scripts
         if self.loki_endpoint:
             parsed = urlparse(self.loki_endpoint)
             service_env["LOKI_URL"] = f"{parsed.scheme}://{parsed.netloc}"
@@ -169,6 +174,7 @@ class K6(ops.Object):
                             f"{' '.join(labels_args)} "
                             f"{' '.join(environment_args)} "
                             "-o experimental-prometheus-rw "
+                            f"{loki_arg} "
                             f"; pebble notify k6.com/done'"
                         ),
                         "startup": "disabled",
