@@ -12,7 +12,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
-APP_NAME = str(METADATA["name"])
+APP_NAME = "k6"
 K6_IMAGE = str(METADATA["resources"]["k6-image"]["upstream-source"])
 RESOURCES_DIR = Path(__file__).parent.parent / "resources"
 
