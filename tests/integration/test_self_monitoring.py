@@ -12,7 +12,7 @@ import pytest
 from .conftest import APP_NAME, K6_IMAGE, RESOURCES_DIR
 
 LOKI_APP = "loki"
-PROMETHEUS_APP = "prometheus-k8s"
+PROMETHEUS_APP = "prometheus"
 LOAD_TEST_SCRIPT = (RESOURCES_DIR / "load_test.js").read_text()
 
 
@@ -87,8 +87,8 @@ def _assert_prometheus_has_k6_metrics(juju: jubilant.Juju, retries=30, delay=10)
 def test_deploy(juju: jubilant.Juju, charm_path):
     """Deploy k6, Loki and Prometheus, then integrate them."""
     juju.deploy(charm_path, APP_NAME, resources={"k6-image": K6_IMAGE})
-    juju.deploy(LOKI_APP, channel="dev/edge", trust=True)
-    juju.deploy(PROMETHEUS_APP, channel="dev/edge", trust=True)
+    juju.deploy("loki-k8s", LOKI_APP, channel="dev/edge", trust=True)
+    juju.deploy("prometheus-k8s", PROMETHEUS_APP, channel="dev/edge", trust=True)
     juju.wait(
         lambda s: jubilant.all_active(s, APP_NAME, LOKI_APP, PROMETHEUS_APP),
         timeout=600,
