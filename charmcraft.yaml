@@ -40,7 +40,7 @@ resources:
   k6-image:
     type: oci-image
     description: OCI image for k6
-    upstream-source: ubuntu/xk6:0-24.04
+    upstream-source: ubuntu/xk6:1.7-24.04
 
 peers:
   k6:
