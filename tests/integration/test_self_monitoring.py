@@ -7,11 +7,12 @@ The test exercises the charm's ``environment`` config option to template
 the Loki and Prometheus endpoints into the k6 script at runtime.
 """
 
-import json
 import time
 
 import jubilant
 import pytest
+import requests
+from tenacity import retry, retry_if_exception_type, retry_if_result, stop_after_attempt, wait_fixed
 
 from .conftest import APP_NAME, K6_IMAGE, RESOURCES_DIR
 
@@ -37,54 +38,59 @@ def _wait_for_idle(juju: jubilant.Juju, timeout=300, poll_interval=10):
     raise TimeoutError(f"{APP_NAME} did not become idle within {timeout}s")
 
 
-def _assert_loki_has_logs(juju: jubilant.Juju, retries=30, delay=10):
-    """Query Loki for any log entries pushed by xk6-loki, retrying until found."""
+def _get_unit_address(juju: jubilant.Juju, app: str, unit_num: int = 0) -> str:
+    """Get the address of a Juju unit from status."""
+    status = juju.status()
+    unit = status.apps[app].units[f"{app}/{unit_num}"]
+    return unit.address
+
+
+@retry(
+    stop=stop_after_attempt(30),
+    wait=wait_fixed(10),
+    retry=retry_if_exception_type(Exception) | retry_if_result(lambda result: not result),
+)
+def _query_loki_for_logs(loki_url: str):
+    """Query Loki for any log entries pushed by xk6-loki."""
     now = int(time.time())
     start = now - 600  # look back 10 minutes
     end = now + 60
-    # xk6-loki creates streams with built-in labels; query broadly
     query = '{instance=~".+"}'
-    for attempt in range(retries):
-        try:
-            output = juju.ssh(
-                f"{LOKI_APP}/0",
-                "curl",
-                "-sG",
-                "http://localhost:3100/loki/api/v1/query_range",
-                "--data-urlencode", f"query={query}",
-                "-d", f"start={start}",
-                "-d", f"end={end}",
-                "-d", "limit=10",
-                container="loki",
-            )
-            data = json.loads(output)
-            results = data.get("data", {}).get("result", [])
-            if results:
-                return
-        except Exception:
-            pass
-        time.sleep(delay)
-    raise AssertionError("No logs found in Loki after xk6-loki push")
+    response = requests.get(
+        f"{loki_url}/loki/api/v1/query_range",
+        params={"query": query, "start": start, "end": end, "limit": 10},
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data.get("data", {}).get("result")
 
 
-def _assert_prometheus_has_k6_metrics(juju: jubilant.Juju, retries=30, delay=10):
+@retry(
+    stop=stop_after_attempt(30),
+    wait=wait_fixed(10),
+    retry=retry_if_exception_type(Exception) | retry_if_result(lambda result: not result),
+)
+def _query_prometheus_for_k6_metrics(prometheus_url: str):
+    """Query Prometheus for k6 metrics."""
+    response = requests.get(
+        f"{prometheus_url}/api/v1/query",
+        params={"query": "k6_iterations_total"},
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data.get("data", {}).get("result")
+
+
+def _assert_loki_has_logs(juju: jubilant.Juju):
+    """Query Loki for any log entries pushed by xk6-loki, retrying until found."""
+    address = _get_unit_address(juju, LOKI_APP)
+    _query_loki_for_logs(f"http://{address}:3100")
+
+
+def _assert_prometheus_has_k6_metrics(juju: jubilant.Juju):
     """Query Prometheus for k6 metrics, retrying until found."""
-    for _ in range(retries):
-        try:
-            output = juju.ssh(
-                f"{PROMETHEUS_APP}/0",
-                "curl",
-                "-s",
-                "http://localhost:9090/api/v1/query?query=k6_iterations_total",
-                container="prometheus",
-            )
-            data = json.loads(output)
-            if data.get("data", {}).get("result"):
-                return
-        except Exception:
-            pass
-        time.sleep(delay)
-    raise AssertionError("No k6 metrics found in Prometheus")
+    address = _get_unit_address(juju, PROMETHEUS_APP)
+    _query_prometheus_for_k6_metrics(f"http://{address}:9090")
 
 
 # ---------------------------------------------------------------------------
