@@ -13,7 +13,7 @@ from ops import CharmBase, Object, Relation
 from pathlib import Path
 import os
 
-LIBID = "notarealoneyet"
+LIBID = "7125b448fffc40e8bfe1716b24b23178"
 LIBAPI = 0
 LIBPATCH = 1
 PYDEPS = ["cosl"]
