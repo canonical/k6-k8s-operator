@@ -129,7 +129,7 @@ def test_run_single_unit(juju: jubilant.Juju):
     task.raise_on_failure()
 
     _wait_for_idle(juju)
-    # _assert_loki_has_logs(juju)
+    _assert_loki_has_logs(juju)
     _assert_prometheus_has_k6_metrics(juju)
 
 
@@ -147,5 +147,5 @@ def test_scale_up_and_run_multi_unit(juju: jubilant.Juju):
     task.raise_on_failure()
 
     _wait_for_idle(juju)
-    # _assert_loki_has_logs(juju)
+    _assert_loki_has_logs(juju)
     _assert_prometheus_has_k6_metrics(juju)
