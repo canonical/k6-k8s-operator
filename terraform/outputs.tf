@@ -2,11 +2,14 @@ output "app_name" {
   value = juju_application.k6.name
 }
 
-output "endpoints" {
+output "provides" {
   value = {
-    # Provides
     provide_cmr_mesh = "provide-cmr-mesh",
-    # Requires
+  }
+}
+
+output "requires" {
+  value = {
     send_remote_write = "send-remote-write",
     logging           = "logging",
     receive-k6-tests  = "receive-k6-tests",

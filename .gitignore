@@ -17,3 +17,7 @@ version
 metadata.yaml
 config.yaml
 actions.yaml
+
+# Terraform
+**/.terraform/*
+**/.terraform.lock.hcl
