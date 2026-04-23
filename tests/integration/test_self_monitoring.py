@@ -103,7 +103,7 @@ def _assert_prometheus_has_k6_metrics(juju: jubilant.Juju):
 def test_deploy(juju: jubilant.Juju, charm_path):
     """Deploy k6, Loki and Prometheus, then integrate them."""
     juju.deploy(charm_path, APP_NAME, resources={"k6-image": K6_IMAGE})
-    juju.deploy("loki-k8s", LOKI_APP, channel="dev/edge", trust=True)
+    juju.deploy("loki-k8s", LOKI_APP, revision=222, channel="dev/edge", trust=True)
     juju.deploy("prometheus-k8s", PROMETHEUS_APP, channel="dev/edge", trust=True)
     juju.wait(
         lambda s: jubilant.all_active(s, APP_NAME, LOKI_APP, PROMETHEUS_APP),
