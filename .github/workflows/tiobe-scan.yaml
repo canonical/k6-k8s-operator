@@ -9,4 +9,6 @@ jobs:
     tics:
         name: TiCs
         uses: canonical/observability/.github/workflows/charm-tiobe-scan.yaml@v2
+        with:
+            coverage-folder: .cover
         secrets: inherit
