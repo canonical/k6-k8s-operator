@@ -45,8 +45,8 @@ def _assert_traces_in_tempo(tempo_ip: str, service_name: str):
 def _deploy_tempo_stack(juju: jubilant.Juju):
     """Deploy the Tempo distributed tracing stack with SeaweedFS storage."""
     # Deploy Tempo coordinator and worker
-    juju.deploy("tempo-coordinator-k8s", TEMPO_APP, channel="2/edge", trust=True)
-    juju.deploy("tempo-worker-k8s", TEMPO_WORKER_APP, channel="2/edge", trust=True)
+    juju.deploy("tempo-coordinator-k8s", TEMPO_APP, channel="dev/edge", trust=True)
+    juju.deploy("tempo-worker-k8s", TEMPO_WORKER_APP, channel="dev/edge", trust=True)
 
     # Deploy SeaweedFS for S3-compatible storage
     juju.deploy("seaweedfs-k8s", SEAWEEDFS_APP, channel="edge", config={"bucket": "tempo"})
