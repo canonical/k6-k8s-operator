@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 from typing import Dict, List, Optional, cast
 
+import ops_tracing
 from charms.k6_k8s.v0.k6_test import K6TestRequirer
 from charms.istio_beacon_k8s.v0.service_mesh import ServiceMeshConsumer, UnitPolicy
 from charms.loki_k8s.v1.loki_push_api import LokiPushApiConsumer
@@ -29,6 +30,11 @@ class K6K8sCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
+        self.tracing = ops_tracing.Tracing(
+            self,
+            tracing_relation_name="charm-tracing",
+            ca_relation_name="receive-ca-cert",
+        )
         self.container = self.unit.get_container("k6")
         if not self.container.can_connect():
             return

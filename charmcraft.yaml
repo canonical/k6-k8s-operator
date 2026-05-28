@@ -26,7 +26,7 @@ parts:
   charm:
     source: .
     plugin: uv
-    build-packages: [git]
+    build-packages: [git, cargo]
     build-snaps: [astral-uv]
     override-build: |
       craftctl default
@@ -94,6 +94,18 @@ provides:
       If this app is generating polciies to provide access to related applications that are cross-model, relate that app to this additional relation to retrieve additional data required for these policies.  This is required because Juju does not natively provide all information required to build these policies when related cross-model.
 
 requires:
+  charm-tracing:
+    interface: tracing
+    optional: true
+    limit: 1
+    description: |
+      Enables sending charm traces to a distributed tracing backend such as Tempo.
+  receive-ca-cert:
+    interface: certificate_transfer
+    optional: true
+    limit: 1
+    description: |
+      Receives a CA certificate to validate TLS connections for charm tracing.
   send-remote-write:
     interface: prometheus_remote_write
     limit: 1
