@@ -15,6 +15,7 @@ import requests
 from tenacity import retry, retry_if_exception_type, retry_if_result, stop_after_attempt, wait_fixed
 
 from .conftest import APP_NAME, K6_IMAGE, RESOURCES_DIR
+from .helpers import get_unit_address
 
 LOKI_APP = "loki"
 PROMETHEUS_APP = "prometheus"
@@ -36,13 +37,6 @@ def _wait_for_idle(juju: jubilant.Juju, timeout=300, poll_interval=10):
             return
         time.sleep(poll_interval)
     raise TimeoutError(f"{APP_NAME} did not become idle within {timeout}s")
-
-
-def _get_unit_address(juju: jubilant.Juju, app: str, unit_num: int = 0) -> str:
-    """Get the address of a Juju unit from status."""
-    status = juju.status()
-    unit = status.apps[app].units[f"{app}/{unit_num}"]
-    return unit.address
 
 
 @retry(
@@ -83,13 +77,13 @@ def _query_prometheus_for_k6_metrics(prometheus_url: str):
 
 def _assert_loki_has_logs(juju: jubilant.Juju):
     """Query Loki for any log entries pushed by xk6-loki, retrying until found."""
-    address = _get_unit_address(juju, LOKI_APP)
+    address = get_unit_address(juju, LOKI_APP)
     _query_loki_for_logs(f"http://{address}:3100")
 
 
 def _assert_prometheus_has_k6_metrics(juju: jubilant.Juju):
     """Query Prometheus for k6 metrics, retrying until found."""
-    address = _get_unit_address(juju, PROMETHEUS_APP)
+    address = get_unit_address(juju, PROMETHEUS_APP)
     _query_prometheus_for_k6_metrics(f"http://{address}:9090")
 
 

@@ -115,6 +115,7 @@ class TestCharmTracingRelation:
         """Charm should start and become active without tracing relation."""
         state_out = ctx.run(ctx.on.update_status(), _base_state())
         assert state_out.unit_status == testing.ActiveStatus()
+        assert state_out.workload_version == "0.57.0"
 
     def test_charm_starts_with_tracing_relation(self, ctx):
         """Charm should start and become active with tracing relation."""
@@ -126,6 +127,10 @@ class TestCharmTracingRelation:
             ctx.on.update_status(), _base_state(relations=[tracing_rel])
         )
         assert state_out.unit_status == testing.ActiveStatus()
+        assert state_out.workload_version == "0.57.0"
+        # Verify tracing relation is still present
+        tracing_relations = [r for r in state_out.relations if r.endpoint == "charm-tracing"]
+        assert len(tracing_relations) == 1
 
     def test_tracing_relation_joined(self, ctx):
         """Charm handles tracing relation-joined event."""
@@ -138,6 +143,7 @@ class TestCharmTracingRelation:
             _base_state(relations=[tracing_rel]),
         )
         assert state_out.unit_status == testing.ActiveStatus()
+        assert state_out.workload_version == "0.57.0"
 
     def test_tracing_relation_changed(self, ctx):
         """Charm handles tracing relation-changed event."""
@@ -150,6 +156,7 @@ class TestCharmTracingRelation:
             _base_state(relations=[tracing_rel]),
         )
         assert state_out.unit_status == testing.ActiveStatus()
+        assert state_out.workload_version == "0.57.0"
 
     def test_tracing_relation_broken(self, ctx):
         """Charm handles tracing relation-broken event gracefully."""
@@ -162,6 +169,8 @@ class TestCharmTracingRelation:
             _base_state(relations=[tracing_rel]),
         )
         assert state_out.unit_status == testing.ActiveStatus()
+        # Charm should remain functional after tracing relation is broken
+        assert state_out.workload_version == "0.57.0"
 
 
 class TestCaCertRelation:
@@ -177,6 +186,7 @@ class TestCaCertRelation:
             ctx.on.update_status(), _base_state(relations=[ca_rel])
         )
         assert state_out.unit_status == testing.ActiveStatus()
+        assert state_out.workload_version == "0.57.0"
 
     def test_charm_starts_with_both_tracing_and_ca_relations(self, ctx):
         """Charm should start with both tracing and CA cert relations."""
@@ -193,3 +203,9 @@ class TestCaCertRelation:
             _base_state(relations=[tracing_rel, ca_rel]),
         )
         assert state_out.unit_status == testing.ActiveStatus()
+        assert state_out.workload_version == "0.57.0"
+        # Verify both relations are present
+        tracing_relations = [r for r in state_out.relations if r.endpoint == "charm-tracing"]
+        ca_relations = [r for r in state_out.relations if r.endpoint == "receive-ca-cert"]
+        assert len(tracing_relations) == 1
+        assert len(ca_relations) == 1

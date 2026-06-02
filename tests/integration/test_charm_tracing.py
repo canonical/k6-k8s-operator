@@ -15,19 +15,13 @@ import requests
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 from .conftest import APP_NAME, K6_IMAGE
+from .helpers import get_unit_address
 
 logger = logging.getLogger(__name__)
 
 TEMPO_APP = "tempo"
 TEMPO_WORKER_APP = "tempo-worker"
 SEAWEEDFS_APP = "seaweedfs"
-
-
-def _get_unit_address(juju: jubilant.Juju, app: str, unit_num: int = 0) -> str:
-    """Get the address of a Juju unit from status."""
-    status = juju.status()
-    unit = status.apps[app].units[f"{app}/{unit_num}"]
-    return unit.address
 
 
 @retry(stop=stop_after_attempt(15), wait=wait_fixed(10))
@@ -76,7 +70,8 @@ def test_deploy_with_tracing(juju: jubilant.Juju, charm_path):
     # Integrate k6 with Tempo for charm tracing
     juju.integrate(f"{APP_NAME}:charm-tracing", f"{TEMPO_APP}:tracing")
     juju.wait(
-        lambda s: jubilant.all_active(s, APP_NAME, TEMPO_APP, TEMPO_WORKER_APP),
+        lambda s: jubilant.all_active(s, APP_NAME, TEMPO_APP, TEMPO_WORKER_APP)
+        and jubilant.all_agents_idle(s),
         timeout=300,
     )
 
@@ -88,6 +83,6 @@ def test_charm_tracing_produces_traces(juju: jubilant.Juju):
     juju.wait(lambda s: jubilant.all_active(s, APP_NAME), timeout=120)
 
     # Query Tempo for traces from the k6 charm
-    tempo_ip = _get_unit_address(juju, TEMPO_APP)
+    tempo_ip = get_unit_address(juju, TEMPO_APP)
     traces = _assert_traces_in_tempo(tempo_ip, service_name=APP_NAME)
     logger.info("Found %d traces for %s", len(traces), APP_NAME)
