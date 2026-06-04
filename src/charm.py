@@ -39,7 +39,7 @@ class K6K8sCharm(CharmBase):
         if not self.container.can_connect():
             return
 
-        self.prometheus = PrometheusRemoteWriteConsumer(self)
+        self.prometheus = PrometheusRemoteWriteConsumer(self, peer_relation_name="k6")
         self.loki = LokiPushApiConsumer(self)
         self.k6_tests = K6TestRequirer(self)
         prometheus_endpoints = self.prometheus.endpoints
