@@ -11,6 +11,8 @@ dependencies = [
   "cosl",
   "httpx",
   "lightkube",
+  "lightkube-extensions",
+  "charmed-service-mesh-helpers",
 ]
 
 [project.optional-dependencies]
