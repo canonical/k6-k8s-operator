@@ -7,6 +7,7 @@ resource "juju_application" "k6" {
   trust              = true
   units              = var.units
   charm {
+    base     = var.base
     name     = "k6-k8s"
     channel  = var.channel
     revision = var.revision
